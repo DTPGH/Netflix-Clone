@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NetflixClone.Api/NetflixClone.Api.csproj" />
+    <Project Path="src/NetflixClone.Application/NetflixClone.Application.csproj" />
+    <Project Path="src/NetflixClone.Domain/NetflixClone.Domain.csproj" />
+    <Project Path="src/NetflixClone.Infrastructure/NetflixClone.Infrastructure.csproj" />
+  </Folder>
+</Solution>
