@@ -1,0 +1,490 @@
+Project NetflixClone {
+  Note: '''
+    Netflix Clone - Phase 1 ERD - FINAL
+    Database First design for ASP.NET Core + EF Core + SQL Server.
+    Scope: Movie-only MVP (no Series/Season/Episode yet).
+  '''
+}
+
+// Bổ sung thêm trường vào UserAccounts
+Table UserAccounts {
+  Id int [pk, increment]
+  Email nvarchar(255) [not null, unique]
+  PasswordHash nvarchar(500) [not null]
+  
+  // Bỏ cột Role vì đã tách ra bảng riêng
+  // Role nvarchar(20) [not null, default: 'User', note: 'Allowed MVP values: User, Admin']
+  
+  IsLocked bit [not null, default: 0, note: 'Admin lock/unlock flag']
+  FailedLoginCount int [not null, default: 0, note: 'Consecutive failed login attempts used for temporary lockout']
+  LockoutEnd datetime2 [note: 'Temporary system lockout end time after repeated failed login attempts']
+  LastLoginAt datetime2 [note: 'Timestamp of the most recent successful login']
+
+  EmailConfirmed bit [not null, default: 0]
+  EmailConfirmedAt datetime2
+  EmailConfirmationTokenHash nvarchar(500) [note: 'Hash of the one-time email confirmation token; never store the raw token']
+  EmailConfirmationTokenExpiresAt datetime2
+
+  PasswordResetTokenHash nvarchar(500) [note: 'Hash of the one-time password reset token; never store the raw token']
+  PasswordResetTokenExpiresAt datetime2
+
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+  UpdatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Checks {
+    `FailedLoginCount >= 0` [name: 'CK_UserAccounts_FailedLoginCount']
+  }
+
+  Note: 'Authentication identity. IsLocked is reserved for manual Admin lock/unlock, while FailedLoginCount + LockoutEnd handle temporary automatic lockout after repeated failed logins. Email confirmation and password reset store only token hashes plus expiry timestamps. Account deletion is outside the current MVP. The maximum active Profile count is determined by the active Subscription Plan.MaxProfiles rather than a hard-coded account limit.'
+}
+
+// Bổ sung phân quyền chia thành bảng Roles, UserRole
+Table Roles {
+  Id int [pk, increment]
+  Name nvarchar(50) [not null, unique, note: 'Allowed MVP values: User, Admin']
+  Description nvarchar(255)
+  IsSystem bit [not null, default: 0, note: 'chặn xoá role gốc']
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+}
+
+Table UserRoles {
+  Id int [pk, increment]
+  UserAccountId int [not null]
+  RoleId int [not null]
+  AssignedAt datetime2 [not null, default: `sysdatetime()`]
+  Indexes { (UserAccountId, RoleId) [unique, name: 'UQ_UserRoles'] }
+}
+
+Ref: UserRoles.UserAccountId > UserAccounts.Id
+Ref: UserRoles.RoleId > Roles.Id 
+
+// Device management: track authenticated browser/device instances and support remote sign-out
+Table Devices {
+  Id int [pk, increment]
+  UserAccountId int [not null]
+  DeviceIdentifierHash nvarchar(500) [not null, note: 'Hash of a server-issued/client-persisted random device identifier; do not use IP or User-Agent as the unique identity']
+  DeviceName nvarchar(200) [not null, note: 'Friendly display name such as Chrome on Windows or Safari on iPhone']
+  DeviceType nvarchar(50) [not null, note: 'Example values: Web, Mobile, Tablet, TV; exact values are defined by application logic']
+  UserAgent nvarchar(500)
+  IpAddress nvarchar(45) [note: 'Most recently observed IPv4/IPv6 address; informational only, not a stable device identifier']
+  FirstSeenAt datetime2 [not null, default: `sysdatetime()`]
+  LastActiveAt datetime2 [not null, default: `sysdatetime()`]
+  RevokedAt datetime2 [note: 'Set when the user removes/signs out this device. The row is retained for history instead of being hard-deleted.']
+
+  Indexes {
+    UserAccountId [name: 'IX_Devices_UserAccountId']
+    (UserAccountId, DeviceIdentifierHash) [unique, name: 'UQ_Devices_UserAccountId_DeviceIdentifierHash']
+    (UserAccountId, RevokedAt) [name: 'IX_Devices_UserAccountId_RevokedAt']
+    LastActiveAt [name: 'IX_Devices_LastActiveAt']
+  }
+
+  Checks {
+    `LastActiveAt >= FirstSeenAt` [name: 'CK_Devices_ActivityTime']
+    `RevokedAt IS NULL OR RevokedAt >= FirstSeenAt` [name: 'CK_Devices_RevokedAt']
+  }
+
+  Note: 'Represents one authenticated browser/device instance for Manage Devices. Removing a device revokes access by setting RevokedAt and revoking all active RefreshTokens linked to that DeviceId. Device identity is based on a random persisted identifier, not fingerprinting by IP/User-Agent.'
+}
+
+Ref: Devices.UserAccountId > UserAccounts.Id
+
+// Bổ sung hồ sơ Kids hoạt động, thêm vào Movies và Profiles
+Table Profiles {
+  Id int [pk, increment]
+  UserAccountId int [not null]
+  Name nvarchar(100) [not null]
+  AvatarUrl nvarchar(500)
+  IsKids bit [not null, default: 0]
+
+  MaturityLevel tinyint [not null, default: 18, note: 'hồ sơ Kids để 13; lọc WHERE Movies.MinAge <= MaturityLevel']
+
+  PinHash nvarchar(500)
+  OnboardingCompleted bit [not null, default: 0]
+
+  IsDeleted bit [not null, default: 0]
+  DeletedAt datetime2
+
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+  UpdatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Indexes {
+    UserAccountId [name: 'IX_Profiles_UserAccountId']
+    (UserAccountId, IsDeleted) [name: 'IX_Profiles_UserAccountId_IsDeleted']
+  }
+
+  Checks {
+    `(IsDeleted = 0 AND DeletedAt IS NULL) OR (IsDeleted = 1 AND DeletedAt IS NOT NULL)` [name: 'CK_Profiles_SoftDeleteState']
+  }
+
+  Note: 'Viewing/personalization identity. PIN is optional and must be stored as a hash when configured. Profile deletion uses soft delete: active profiles have IsDeleted = 0 and DeletedAt = NULL; deleted profiles remain in the database for historical/analytics integrity but cannot be selected or used for new viewing/personalization actions. The maximum number of active Profiles is enforced from the owning account active Subscription Plan.MaxProfiles.'
+}
+
+Table RefreshTokens {
+  Id int [pk, increment]
+  UserAccountId int [not null]
+  DeviceId int [not null]
+  TokenHash nvarchar(500) [not null, unique]
+  ExpiresAt datetime2 [not null]
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+  RevokedAt datetime2
+  ReplacedByTokenId int [note: 'Self-reference to the next refresh token created during token rotation']
+
+  Indexes {
+    UserAccountId [name: 'IX_RefreshTokens_UserAccountId']
+    DeviceId [name: 'IX_RefreshTokens_DeviceId']
+    (DeviceId, RevokedAt, ExpiresAt) [name: 'IX_RefreshTokens_Device_Active']
+    ExpiresAt [name: 'IX_RefreshTokens_ExpiresAt']
+    ReplacedByTokenId [name: 'IX_RefreshTokens_ReplacedByTokenId']
+  }
+
+  Note: 'Refresh token lifecycle for UserAccount and Device. RevokedAt is null while token is active. ReplacedByTokenId links a rotated token to its replacement token. DeviceId allows all token chains for one device to be revoked during remote sign-out. Application/domain logic must ensure DeviceId belongs to the same UserAccountId.'
+}
+
+
+// Subscription and simulated billing domain
+Table Plans {
+  Id int [pk, increment]
+  Name nvarchar(100) [not null, unique]
+  Price decimal(18,2) [not null]
+  MaxProfiles int [not null]
+  MaxConcurrentStreams int [not null]
+  MaxQuality nvarchar(20) [not null, note: 'Example values: 480p, 720p, 1080p, 4K']
+  IsActive bit [not null, default: 1]
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+  UpdatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Checks {
+    `Price >= 0` [name: 'CK_Plans_Price']
+    `MaxProfiles > 0` [name: 'CK_Plans_MaxProfiles']
+    `MaxConcurrentStreams > 0` [name: 'CK_Plans_MaxConcurrentStreams']
+  }
+
+  Note: 'Subscription plan configuration. MaxProfiles limits active Profiles for an account; MaxConcurrentStreams limits simultaneous active ViewingSessions across all Profiles owned by that account. MaxQuality is reserved for playback-quality enforcement when multi-quality video assets are introduced.'
+}
+
+Table Subscriptions {
+  Id int [pk, increment]
+  UserAccountId int [not null]
+  PlanId int [not null]
+  StartDate datetime2 [not null]
+  EndDate datetime2
+  Status nvarchar(20) [not null, note: 'Allowed MVP values: Pending, Active, Expired, Cancelled']
+  AutoRenew bit [not null, default: 0]
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+  UpdatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Indexes {
+    UserAccountId [name: 'IX_Subscriptions_UserAccountId']
+    PlanId [name: 'IX_Subscriptions_PlanId']
+    (UserAccountId, Status) [name: 'IX_Subscriptions_UserAccountId_Status']
+    EndDate [name: 'IX_Subscriptions_EndDate']
+  }
+
+  Checks {
+    `Status IN ('Pending', 'Active', 'Expired', 'Cancelled')` [name: 'CK_Subscriptions_Status']
+    `EndDate IS NULL OR EndDate >= StartDate` [name: 'CK_Subscriptions_DateRange']
+  }
+
+  Note: 'Subscription history for a UserAccount. An account may have many subscriptions over time, but application/domain logic must ensure at most one Active subscription at a time.'
+}
+
+Table PaymentTransactions {
+  Id int [pk, increment]
+  SubscriptionId int [not null]
+  Amount decimal(18,2) [not null]
+  Method nvarchar(50) [not null, note: 'Simulated payment method; exact allowed values are defined by application logic']
+  TransactionCode nvarchar(100) [not null, unique]
+  Status nvarchar(20) [not null, note: 'Allowed MVP values: Pending, Succeeded, Failed']
+  PaidAt datetime2
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Indexes {
+    SubscriptionId [name: 'IX_PaymentTransactions_SubscriptionId']
+    Status [name: 'IX_PaymentTransactions_Status']
+    PaidAt [name: 'IX_PaymentTransactions_PaidAt']
+  }
+
+  Checks {
+    `Amount >= 0` [name: 'CK_PaymentTransactions_Amount']
+    `Status IN ('Pending', 'Succeeded', 'Failed')` [name: 'CK_PaymentTransactions_Status']
+    `(Status = 'Succeeded' AND PaidAt IS NOT NULL) OR (Status IN ('Pending', 'Failed') AND PaidAt IS NULL)` [name: 'CK_PaymentTransactions_PaidAt']
+  }
+
+  Note: 'Simulated payment transaction history. TransactionCode uniquely identifies a simulated payment attempt. Successful payment activates or renews the related Subscription through application/domain logic.'
+}
+
+// Bổ sung cho bảng Movies khi hồ sơ Kids hoạt động
+Table Movies {
+  Id int [pk, increment]
+  Title nvarchar(255) [not null]
+  Description nvarchar(2000)
+  ReleaseDate date
+  DurationSeconds int [not null]
+  ThumbnailUrl nvarchar(500)
+  BackdropUrl nvarchar(500)
+  TrailerUrl nvarchar(500)
+  VideoUrl nvarchar(500)
+
+  MaturityRating nvarchar(10) [not null, default: 'P', note: 'nhãn hiển thị: P, T13, T16, T18']
+  MinAge tinyint [not null, default: 0, note: 'số tuổi tối thiểu — dùng để SO SÁNH']
+
+  IsDeleted bit [not null, default: 0]        
+  IsFeatured bit [not null, default: 0]
+  IsAvailable bit [not null, default: 1]
+  
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+  UpdatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Indexes {
+    Title [name: 'IX_Movies_Title']
+    ReleaseDate [name: 'IX_Movies_ReleaseDate']
+    IsFeatured [name: 'IX_Movies_IsFeatured']
+    IsAvailable [name: 'IX_Movies_IsAvailable']
+  }
+
+  Checks {
+    `DurationSeconds > 0` [name: 'CK_Movies_DurationSeconds']
+  }
+
+  Note: 'Movie-only MVP. Admin deletion uses soft delete through IsDeleted so historical references are retained. IsAvailable controls whether non-deleted content can currently be watched and is separate from soft-delete state.'
+}
+
+Table Genres {
+  Id int [pk, increment]
+  Name nvarchar(100) [not null, unique]
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Note: 'Movie genre such as Action, Sci-Fi, Comedy.'
+}
+
+Table MovieGenres {
+  MovieId int [not null]
+  GenreId int [not null]
+
+  Indexes {
+    (MovieId, GenreId) [pk, name: 'PK_MovieGenres']
+    GenreId [name: 'IX_MovieGenres_GenreId']
+  }
+
+  Note: 'Many-to-many join table between Movies and Genres.'
+}
+
+// Movie detail credits: actors and directors
+Table People {
+  Id int [pk, increment]
+  FullName nvarchar(200) [not null]
+  PhotoUrl nvarchar(500)
+  BirthDate date
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+  UpdatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Indexes {
+    FullName [name: 'IX_People_FullName']
+  }
+
+  Note: 'Person that can be credited on a Movie, such as an actor or director. Movie-specific role information belongs in MovieCredits.'
+}
+
+Table MovieCredits {
+  Id int [pk, increment]
+  MovieId int [not null]
+  PersonId int [not null]
+  CreditType nvarchar(20) [not null, note: 'Allowed MVP values: Actor, Director']
+  CharacterName nvarchar(200) [note: 'Used mainly for Actor credits; null for Director credits']
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Indexes {
+    MovieId [name: 'IX_MovieCredits_MovieId']
+    PersonId [name: 'IX_MovieCredits_PersonId']
+    (MovieId, CreditType) [name: 'IX_MovieCredits_MovieId_CreditType']
+  }
+
+  Checks {
+    `CreditType IN ('Actor', 'Director')` [name: 'CK_MovieCredits_CreditType']
+  }
+
+  Note: 'Credits shown on Movie detail pages. MovieCredits is used instead of MovieCasts because the table contains both cast (Actor) and crew (Director) relationships.'
+}
+
+Table MyListItems {
+  Id int [pk, increment]
+  ProfileId int [not null]
+  MovieId int [not null]
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Indexes {
+    (ProfileId, MovieId) [unique, name: 'UQ_MyListItems_ProfileId_MovieId']
+    MovieId [name: 'IX_MyListItems_MovieId']
+  }
+
+  Note: 'User-facing feature: My List. Each Movie can appear at most once in the same Profile My List.'
+}
+
+Table Ratings {
+  Id int [pk, increment]
+  ProfileId int [not null]
+  MovieId int [not null]
+  Value nvarchar(20) [not null, note: 'Allowed MVP values: NotForMe, Like, Love']
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+  UpdatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Indexes {
+    (ProfileId, MovieId) [unique, name: 'UQ_Ratings_ProfileId_MovieId']
+    MovieId [name: 'IX_Ratings_MovieId']
+  }
+
+  Checks {
+    `Value IN ('NotForMe', 'Like', 'Love')` [name: 'CK_Ratings_Value']
+  }
+
+  Note: 'Stores the current rating of a Profile for a Movie. Changing rating updates this record instead of creating a duplicate.'
+}
+
+Table ProfilePreferences {
+  Id int [pk, increment]
+  ProfileId int [not null]
+  MovieId int [not null]
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Indexes {
+    (ProfileId, MovieId) [unique, name: 'UQ_ProfilePreferences_ProfileId_MovieId']
+    MovieId [name: 'IX_ProfilePreferences_MovieId']
+  }
+
+  Note: 'Initial movie preferences selected during first-time Profile onboarding. This is not the same as My List.'
+}
+
+Table WatchHistories {
+  Id int [pk, increment]
+  ProfileId int [not null]
+  MovieId int [not null]
+  LastPositionSeconds int [not null, default: 0]
+  LastWatchedAt datetime2 [not null, default: `sysdatetime()`]
+  IsCompleted bit [not null, default: 0]
+  CompletedAt datetime2 [note: 'Timestamp when the Movie was marked completed; null while IsCompleted = 0']
+  IsHidden bit [not null, default: 0, note: 'Hide this Movie from Continue Watching without deleting playback history or analytics data']
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+  UpdatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Indexes {
+    (ProfileId, MovieId) [unique, name: 'UQ_WatchHistories_ProfileId_MovieId']
+    (ProfileId, IsCompleted, IsHidden, LastWatchedAt) [name: 'IX_WatchHistories_ContinueWatching']
+    MovieId [name: 'IX_WatchHistories_MovieId']
+  }
+
+  Checks {
+    `LastPositionSeconds >= 0` [name: 'CK_WatchHistories_LastPositionSeconds']
+    `(IsCompleted = 0 AND CompletedAt IS NULL) OR (IsCompleted = 1 AND CompletedAt IS NOT NULL)` [name: 'CK_WatchHistories_CompletedAt']
+  }
+
+  Note: 'Current playback state for one Profile + Movie. MVP marks Completed when progress reaches at least 90% of Movie runtime. IsHidden supports Remove from Continue Watching while retaining history for analytics/recommendation.'
+}
+
+Table ViewingSessions {
+  Id int [pk, increment]
+  ProfileId int [not null]
+  MovieId int [not null]
+  DeviceId int [not null, note: 'Authenticated device/browser instance that started this playback session']
+  StartedAt datetime2 [not null, default: `sysdatetime()`]
+  EndedAt datetime2
+  WatchedSeconds int [not null, default: 0]
+  IsQualifiedView bit [not null, default: 0]
+  Quality nvarchar(20) [note: 'Informational/default playback quality in MVP; becomes authoritative when multi-quality VideoAssets are implemented']
+  EndReason nvarchar(30) [note: 'Null while active. Allowed ended-session values: Finished, Closed, Timeout']
+
+  Indexes {
+    ProfileId [name: 'IX_ViewingSessions_ProfileId']
+    MovieId [name: 'IX_ViewingSessions_MovieId']
+    DeviceId [name: 'IX_ViewingSessions_DeviceId']
+    (DeviceId, EndedAt) [name: 'IX_ViewingSessions_Device_Active']
+    (MovieId, IsQualifiedView) [name: 'IX_ViewingSessions_Movie_QualifiedView']
+    StartedAt [name: 'IX_ViewingSessions_StartedAt']
+  }
+
+  Checks {
+    `WatchedSeconds >= 0` [name: 'CK_ViewingSessions_WatchedSeconds']
+    `EndedAt IS NULL OR EndedAt >= StartedAt` [name: 'CK_ViewingSessions_TimeRange']
+    `IsQualifiedView = 0 OR WatchedSeconds >= 120` [name: 'CK_ViewingSessions_QualifiedView']
+    `EndReason IS NULL OR EndReason IN ('Finished', 'Closed', 'Timeout')` [name: 'CK_ViewingSessions_EndReason']
+    `(EndedAt IS NULL AND EndReason IS NULL) OR (EndedAt IS NOT NULL AND EndReason IS NOT NULL)` [name: 'CK_ViewingSessions_EndState']
+  }
+
+  Note: 'Analytics playback session. StartedAt marks session start; EndedAt is NULL while active and set when playback finishes, the user leaves/closes it, or stale-session timeout logic closes it. Pause/Resume stays in the same session. WatchedSeconds counts actual watched time only. DeviceId identifies where playback occurred but concurrent-stream enforcement still counts active ViewingSessions, not Devices. Application/domain logic must ensure the Device and Profile belong to the same UserAccount. MVP Qualified View rule: WatchedSeconds >= 120, at most once per session.'
+}
+
+// Admin operation history for accountability; initially focused on account lock/unlock actions
+Table AdminActionLogs {
+  Id int [pk, increment]
+  ActorUserAccountId int [not null, note: 'Admin account that performed the action']
+  TargetUserAccountId int [not null, note: 'User account affected by the Admin action']
+  Action nvarchar(50) [not null, note: 'Allowed MVP values: AccountLocked, AccountUnlocked']
+  Reason nvarchar(500)
+  CreatedAt datetime2 [not null, default: `sysdatetime()`]
+
+  Indexes {
+    ActorUserAccountId [name: 'IX_AdminActionLogs_ActorUserAccountId']
+    TargetUserAccountId [name: 'IX_AdminActionLogs_TargetUserAccountId']
+    (TargetUserAccountId, CreatedAt) [name: 'IX_AdminActionLogs_TargetUserAccountId_CreatedAt']
+    CreatedAt [name: 'IX_AdminActionLogs_CreatedAt']
+  }
+
+  Checks {
+    `Action IN ('AccountLocked', 'AccountUnlocked')` [name: 'CK_AdminActionLogs_Action']
+  }
+
+  Note: 'MVP audit trail for manual Admin account lock/unlock actions. It records who acted, which account was affected, what happened, why, and when. A broader future audit system may generalize this concept to Movies, Plans, Roles, and other administrative changes.'
+}
+
+/*
+  Relationships / delete policy
+
+  - UserAccounts: manual Admin Lock/Unlock uses IsLocked; automatic temporary login lockout uses FailedLoginCount + LockoutEnd; no Account delete flow.
+  - Profile count limit is derived from the account active Subscription Plan.MaxProfiles.
+  - Concurrent playback limit is derived from Plan.MaxConcurrentStreams by counting active ViewingSessions (EndedAt IS NULL) across Profiles owned by the account. Devices are NOT counted for this rule; ViewingSessions.DeviceId only records where playback occurred.
+  - Devices exists for Manage Devices / remote sign-out. Removing a device sets Devices.RevokedAt and revokes every active RefreshToken associated with that DeviceId; the device row is retained for history.
+  - Profiles: deletion is SOFT DELETE through IsDeleted + DeletedAt.
+    Child/history rows are retained so My List, Rating, WatchHistory,
+    ViewingSession and onboarding preference data are not automatically lost.
+  - Movie detail credits are modeled through People + MovieCredits (Actor/Director).
+  - VideoAssets/Subtitles are intentionally deferred until post-MVP. MVP may show non-functional/default quality and subtitle controls in the UI while Movies.VideoUrl remains the single playback source.
+  - AdminActionLogs initially audits account lock/unlock operations and can later evolve into a broader administrative audit trail.
+  - Movies: Admin deletion uses soft delete through IsDeleted; historical references are retained. IsAvailable separately controls whether a non-deleted Movie can currently be played.
+
+  Foreign keys intentionally do not use broad ON DELETE CASCADE rules in this
+  DBML version. This avoids accidental historical/analytics data loss and
+  SQL Server multiple-cascade-path issues.
+*/
+
+Ref: Profiles.UserAccountId > UserAccounts.Id
+Ref: RefreshTokens.UserAccountId > UserAccounts.Id
+Ref: RefreshTokens.DeviceId > Devices.Id
+Ref: RefreshTokens.ReplacedByTokenId > RefreshTokens.Id
+
+Ref: Subscriptions.UserAccountId > UserAccounts.Id
+Ref: Subscriptions.PlanId > Plans.Id
+Ref: PaymentTransactions.SubscriptionId > Subscriptions.Id
+
+Ref: MovieGenres.MovieId > Movies.Id
+Ref: MovieGenres.GenreId > Genres.Id
+
+Ref: MovieCredits.MovieId > Movies.Id
+Ref: MovieCredits.PersonId > People.Id
+
+Ref: MyListItems.ProfileId > Profiles.Id
+Ref: MyListItems.MovieId > Movies.Id
+
+Ref: Ratings.ProfileId > Profiles.Id
+Ref: Ratings.MovieId > Movies.Id
+
+Ref: ProfilePreferences.ProfileId > Profiles.Id
+Ref: ProfilePreferences.MovieId > Movies.Id
+
+Ref: WatchHistories.ProfileId > Profiles.Id
+Ref: WatchHistories.MovieId > Movies.Id
+
+Ref: ViewingSessions.ProfileId > Profiles.Id
+Ref: ViewingSessions.MovieId > Movies.Id
+Ref: ViewingSessions.DeviceId > Devices.Id
+
+Ref: AdminActionLogs.ActorUserAccountId > UserAccounts.Id
+Ref: AdminActionLogs.TargetUserAccountId > UserAccounts.Id
