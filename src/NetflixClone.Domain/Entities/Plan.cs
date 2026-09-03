@@ -11,8 +11,6 @@ public partial class Plan
 
     public decimal Price { get; set; }
 
-    public int MaxProfiles { get; set; }
-
     public int MaxConcurrentStreams { get; set; }
 
     public string MaxQuality { get; set; } = null!;

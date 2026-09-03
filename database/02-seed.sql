@@ -67,7 +67,6 @@ BEGIN TRY
         (
             [Name],
             [Price],
-            [MaxProfiles],
             [MaxConcurrentStreams],
             [MaxQuality],
             [IsActive]
@@ -76,7 +75,6 @@ BEGIN TRY
         (
             N'Basic',
             79000,
-            1,
             1,
             N'720p',
             1
@@ -94,7 +92,6 @@ BEGIN TRY
         (
             [Name],
             [Price],
-            [MaxProfiles],
             [MaxConcurrentStreams],
             [MaxQuality],
             [IsActive]
@@ -103,7 +100,6 @@ BEGIN TRY
         (
             N'Standard',
             129000,
-            3,
             2,
             N'1080p',
             1
@@ -121,7 +117,6 @@ BEGIN TRY
         (
             [Name],
             [Price],
-            [MaxProfiles],
             [MaxConcurrentStreams],
             [MaxQuality],
             [IsActive]
@@ -130,7 +125,6 @@ BEGIN TRY
         (
             N'Premium',
             199000,
-            5,
             4,
             N'4K',
             1

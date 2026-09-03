@@ -106,6 +106,15 @@ CREATE TABLE [dbo].[Plans] (
 )
 GO
 
+-- Configuration for Plans, drop MaxProfiles column and constraint to allow unlimited profiles per plan. Application logic will enforce limits based on business rules instead of a hard-coded database constraint.
+ALTER TABLE [dbo].[Plans]
+DROP CONSTRAINT [CK_Plans_MaxProfiles];
+GO
+
+ALTER TABLE [dbo].[Plans]
+DROP COLUMN [MaxProfiles];
+GO
+
 CREATE TABLE [dbo].[Subscriptions] (
   [Id] int  IDENTITY(1, 1),
   [UserAccountId] int NOT NULL,

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NetflixClone.Application.Common.Abstractions.Persistence;
 using NetflixClone.Infrastructure.Persistence;
 
 namespace NetflixClone.Infrastructure;
@@ -10,7 +11,10 @@ public static class DependencyInjection
     {
         services.AddDbContext<NetflixCloneDbContext>(options =>
             options.UseSqlServer(connectionString));
-            
+
+        services.AddScoped<IUnitOfWork>(ServiceProvider =>
+            ServiceProvider.GetRequiredService<NetflixCloneDbContext>());
+
         return services;
     }
 }
