@@ -94,7 +94,7 @@ Mục tiêu học tập chính của dự án:
 - Thanh toán chỉ được mô phỏng; mỗi lần thanh toán tạo một `PaymentTransaction` có mã giao dịch duy nhất và trạng thái `Pending`, `Succeeded` hoặc `Failed`.
 - Thanh toán thành công sẽ kích hoạt hoặc gia hạn Subscription tương ứng.
 - Một tài khoản có thể có nhiều Subscription trong lịch sử nhưng tại một thời điểm chỉ có tối đa một Subscription `Active`.
-- Số Profile tối đa của tài khoản được xác định bởi `Plan.MaxProfiles`.
+
 - Số lượt xem đồng thời tối đa được xác định bởi `Plan.MaxConcurrentStreams`.
 - `Plan.MaxQuality` được lưu để phục vụ mở rộng về sau; MVP chưa cần nhiều video asset theo từng chất lượng.
 

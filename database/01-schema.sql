@@ -22,6 +22,12 @@ CREATE TABLE [dbo].[UserAccounts] (
 )
 GO
 
+-- Bổ sung trường cho UseAccounts
+ALTER TABLE [dbo].[UserAccounts]
+ADD [EmailConfirmationLastSentAt] DATETIME2 NULL;
+GO
+
+
 CREATE TABLE [dbo].[Roles] (
   [Id] int IDENTITY(1, 1),
   [Name] nvarchar(50) UNIQUE NOT NULL,

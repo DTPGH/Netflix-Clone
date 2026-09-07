@@ -25,4 +25,15 @@ public sealed class UserAccountRepository : IUserAccountRepository
     {
         await _dbContext.UserAccounts.AddAsync(userAccount, cancellationToken);
     }
+
+    public async Task<UserAccount?> GetByIdAsync(int userAccountId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.UserAccounts
+            .FirstOrDefaultAsync(x => x.Id == userAccountId, cancellationToken);
+    }
+
+    public Task<UserAccount?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.UserAccounts.FirstOrDefaultAsync(account => account.Email == email, cancellationToken);
+    }
 }

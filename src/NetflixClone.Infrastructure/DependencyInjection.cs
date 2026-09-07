@@ -1,10 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NetflixClone.Application.Common.Abstractions.Messaging;
 using NetflixClone.Application.Common.Abstractions.Persistence;
 using NetflixClone.Application.Common.Abstractions.Security;
+using NetflixClone.Application.Common.Abstractions.Time;
+using NetflixClone.Infrastructure.Messaging;
 using NetflixClone.Infrastructure.Persistence;
 using NetflixClone.Infrastructure.Persistence.Repositories;
 using NetflixClone.Infrastructure.Security;
+using NetflixClone.Infrastructure.Time;
 
 namespace NetflixClone.Infrastructure;
 
@@ -21,6 +25,9 @@ public static class DependencyInjection
         services.AddScoped<IUserAccountRepository, UserAccountRepository>();
         services.AddScoped<IRoleRepository, RoleRepository>();
         services.AddScoped<IPasswordHasher, BCryptPasswordHasher>();
+        services.AddScoped<IEmailConfirmationTokenService, EmailConfirmationTokenService>();
+        services.AddSingleton<IClock, SystemClock>();
+        services.AddScoped<IEmailConfirmationSender, DevelopmentEmailConfirmationSender>();
 
         return services;
     }
