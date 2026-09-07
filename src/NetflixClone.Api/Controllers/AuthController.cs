@@ -1,6 +1,8 @@
 // using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using NetflixClone.Api.Contracts.Authentication;
+using NetflixClone.Application.Authentication.EmailConfirmation;
+using NetflixClone.Application.Authentication.EmailConfirmation.Resend;
 using NetflixClone.Application.Authentication.Register;
 using NetflixClone.Application.Common.Results;
 
@@ -11,9 +13,14 @@ namespace NetflixClone.Api.Controllers;
 public sealed class AuthController : ControllerBase
 {
     private readonly IRegisterAccountUseCase _registerAccountUseCase;
-    public AuthController(IRegisterAccountUseCase registerAccountUseCase)
+    private readonly IConfirmEmailUseCase _confirmEmailUseCase;
+    private readonly IResendEmailConfirmationUseCase _resendEmailConfirmationUseCase;
+
+    public AuthController(IRegisterAccountUseCase registerAccountUseCase, IConfirmEmailUseCase confirmEmailUseCase, IResendEmailConfirmationUseCase resendEmailConfirmationUseCase)
     {
         _registerAccountUseCase = registerAccountUseCase;
+        _confirmEmailUseCase = confirmEmailUseCase;
+        _resendEmailConfirmationUseCase = resendEmailConfirmationUseCase;
     }
 
     [HttpPost("register")]
@@ -47,5 +54,53 @@ public sealed class AuthController : ControllerBase
         }
         var response = new RegisterResponse(result.Value!.UserAccountId, result.Value.Email, result.Value.EmailConfirmed);
         return StatusCode(StatusCodes.Status201Created, response);
+    }
+
+    [HttpPost("confirm-email")]
+    public async Task<IActionResult> ConfirmEmail(ConfirmEmailRequest request, CancellationToken cancellationToken)
+    {
+        var command = new ConfirmEmailCommand(request.UserAccountId, request.Token);
+
+        var result = await _confirmEmailUseCase.ExecuteAsync(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return result.Error!.Type switch
+            {
+                ErrorType.Validation =>
+                    BadRequest(new
+                    {
+                        result.Error.Code,
+                        result.Error.Description
+                    }),
+
+                _ => Problem(
+                    statusCode:
+                        StatusCodes.Status500InternalServerError,
+                    title: "An unexpected error occurred.")
+            };
+        }
+
+        return Ok(new
+        {
+            result.Value!.UserAccountId,
+            result.Value.Email,
+            result.Value.EmailConfirmed
+        });
+    }
+
+    [HttpPost("resend-email-confirmation")]
+    public async Task<IActionResult> ResendEmailConfirmation(ResendEmailConfirmationRequest request, CancellationToken cancellationToken)
+    {
+        var command = new ResendEmailConfirmationCommand(request.Email);
+
+        await _resendEmailConfirmationUseCase.ExecuteAsync(command, cancellationToken);
+
+        return Ok(new
+        {
+            message =
+                "If an unconfirmed account exists for this email, " +
+                "a confirmation email has been sent."
+        });
     }
 }

@@ -28,6 +28,8 @@ Table UserAccounts {
   PasswordResetTokenHash nvarchar(500) [note: 'Hash of the one-time password reset token; never store the raw token']
   PasswordResetTokenExpiresAt datetime2
 
+  EmailConfirmationLastSentAt datetime2 [null]
+
   CreatedAt datetime2 [not null, default: `sysdatetime()`]
   UpdatedAt datetime2 [not null, default: `sysdatetime()`]
 
@@ -146,7 +148,7 @@ Table Plans {
   Id int [pk, increment]
   Name nvarchar(100) [not null, unique]
   Price decimal(18,2) [not null]
-  MaxProfiles int [not null]
+  //MaxProfiles int [not null]
   MaxConcurrentStreams int [not null]
   MaxQuality nvarchar(20) [not null, note: 'Example values: 480p, 720p, 1080p, 4K']
   IsActive bit [not null, default: 1]

@@ -35,6 +35,8 @@ public partial class UserAccount
 
     public DateTime UpdatedAt { get; set; }
 
+    public DateTime? EmailConfirmationLastSentAt { get; set; }
+
     public virtual ICollection<AdminActionLog> AdminActionLogActorUserAccounts { get; set; } = new List<AdminActionLog>();
 
     public virtual ICollection<AdminActionLog> AdminActionLogTargetUserAccounts { get; set; } = new List<AdminActionLog>();
