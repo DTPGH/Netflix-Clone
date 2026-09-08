@@ -4,6 +4,7 @@ using NetflixClone.Api.Contracts.Authentication;
 using NetflixClone.Application.Authentication.EmailConfirmation;
 using NetflixClone.Application.Authentication.EmailConfirmation.Resend;
 using NetflixClone.Application.Authentication.Register;
+using NetflixClone.Application.Authentication.Login;
 using NetflixClone.Application.Common.Results;
 
 namespace NetflixClone.Api.Controllers;
@@ -15,12 +16,43 @@ public sealed class AuthController : ControllerBase
     private readonly IRegisterAccountUseCase _registerAccountUseCase;
     private readonly IConfirmEmailUseCase _confirmEmailUseCase;
     private readonly IResendEmailConfirmationUseCase _resendEmailConfirmationUseCase;
+    private readonly ILoginUseCase _loginUseCase;
 
-    public AuthController(IRegisterAccountUseCase registerAccountUseCase, IConfirmEmailUseCase confirmEmailUseCase, IResendEmailConfirmationUseCase resendEmailConfirmationUseCase)
+    public AuthController(IRegisterAccountUseCase registerAccountUseCase, IConfirmEmailUseCase confirmEmailUseCase, IResendEmailConfirmationUseCase resendEmailConfirmationUseCase, ILoginUseCase loginUseCase)
     {
         _registerAccountUseCase = registerAccountUseCase;
         _confirmEmailUseCase = confirmEmailUseCase;
         _resendEmailConfirmationUseCase = resendEmailConfirmationUseCase;
+        _loginUseCase = loginUseCase;
+    }
+
+    [HttpPost("login")]
+    public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
+    {
+        var command = new LoginCommand(request.Email, request.Password);
+        var result = await _loginUseCase.ExecuteAsync(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return result.Error!.Type switch
+            {
+                ErrorType.Unauthorized => Unauthorized(new
+                {
+                    result.Error.Code,
+                    result.Error.Description
+                }),
+                ErrorType.Forbidden => StatusCode(StatusCodes.Status403Forbidden, new
+                {
+                    result.Error.Code,
+                    result.Error.Description
+                }),
+                _ => Problem(
+                    statusCode: StatusCodes.Status500InternalServerError,
+                    title: "An unexpected error occurred.")
+            };
+        }
+
+        return Ok(new LoginResponse(result.Value!.UserAccountId, result.Value.Email));
     }
 
     [HttpPost("register")]

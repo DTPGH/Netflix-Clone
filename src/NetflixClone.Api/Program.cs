@@ -1,6 +1,7 @@
 using NetflixClone.Application.Authentication.EmailConfirmation;
 using NetflixClone.Application.Authentication.EmailConfirmation.Resend;
 using NetflixClone.Application.Authentication.Register;
+using NetflixClone.Application.Authentication.Login;
 using NetflixClone.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,6 +16,7 @@ var connectionString = builder.Configuration.GetConnectionString("NetflixCloneDb
 builder.Services.AddInfrastructure(connectionString);
 
 builder.Services.AddScoped<IRegisterAccountUseCase, RegisterAccountUseCase>();
+builder.Services.AddScoped<ILoginUseCase, LoginUseCase>();
 builder.Services.AddScoped<IConfirmEmailUseCase, ConfirmEmailUseCase>();
 builder.Services.AddScoped<IResendEmailConfirmationUseCase, ResendEmailConfirmationUseCase>();
 
