@@ -18,4 +18,9 @@ public static class LoginErrors
         "Auth.Login.EmailNotConfirmed",
         "The email address has not been confirmed.",
         ErrorType.Forbidden);
+
+    public static readonly Error TemporarilyLocked = new(
+        "Auth.Login.TemporarilyLocked",
+        "The account is temporarily locked. Please try again later.",
+        ErrorType.Unauthorized);
 }
