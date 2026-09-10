@@ -30,7 +30,12 @@ public sealed class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
     {
-        var command = new LoginCommand(request.Email, request.Password);
+        var userAgent = Request.Headers.UserAgent.ToString();
+        var command = new LoginCommand(
+            request.Email, request.Password, request.DeviceIdentifier,
+            request.DeviceName, request.DeviceType,
+            userAgent.Length > 500 ? userAgent[..500] : userAgent,
+            HttpContext.Connection.RemoteIpAddress?.ToString());
         var result = await _loginUseCase.ExecuteAsync(command, cancellationToken);
 
         if (result.IsFailure)
@@ -55,7 +60,9 @@ public sealed class AuthController : ControllerBase
 
         return Ok(new LoginResponse(
             result.Value!.UserAccountId, result.Value.Email,
-            result.Value.AccessToken, result.Value.ExpiresAtUtc));
+            result.Value.AccessToken, result.Value.ExpiresAtUtc,
+            result.Value.RefreshToken, result.Value.RefreshTokenExpiresAtUtc,
+            result.Value.DeviceIdentifier));
     }
 
     [Authorize]
