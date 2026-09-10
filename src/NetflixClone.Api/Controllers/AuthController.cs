@@ -1,5 +1,6 @@
 // using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using NetflixClone.Api.Contracts.Authentication;
 using NetflixClone.Application.Authentication.EmailConfirmation;
 using NetflixClone.Application.Authentication.EmailConfirmation.Resend;
@@ -52,7 +53,20 @@ public sealed class AuthController : ControllerBase
             };
         }
 
-        return Ok(new LoginResponse(result.Value!.UserAccountId, result.Value.Email));
+        return Ok(new LoginResponse(
+            result.Value!.UserAccountId, result.Value.Email,
+            result.Value.AccessToken, result.Value.ExpiresAtUtc));
+    }
+
+    [Authorize]
+    [HttpGet("me")]
+    public IActionResult Me()
+    {
+        return Ok(new
+        {
+            UserAccountId = User.FindFirst("sub")!.Value,
+            Roles = User.FindAll("role").Select(claim => claim.Value).ToArray()
+        });
     }
 
     [HttpPost("register")]

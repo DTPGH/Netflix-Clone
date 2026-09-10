@@ -25,6 +25,7 @@ public static class DependencyInjection
         services.AddScoped<IUserAccountRepository, UserAccountRepository>();
         services.AddScoped<IRoleRepository, RoleRepository>();
         services.AddScoped<IPasswordHasher, BCryptPasswordHasher>();
+        services.AddScoped<IAccessTokenGenerator, JwtAccessTokenGenerator>();
         services.AddScoped<IEmailConfirmationTokenService, EmailConfirmationTokenService>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<IEmailConfirmationSender, DevelopmentEmailConfirmationSender>();

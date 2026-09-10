@@ -21,6 +21,16 @@ public sealed class UserAccountRepository : IUserAccountRepository
             );
     }
 
+    public async Task<IReadOnlyCollection<string>> GetRoleNamesAsync(int userAccountId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.UserRoles
+            .AsNoTracking()
+            .Where(userRole => userRole.UserAccountId == userAccountId)
+            .Select(userRole => userRole.Role.Name)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task AddAsync(UserAccount userAccount, CancellationToken cancellationToken = default)
     {
         await _dbContext.UserAccounts.AddAsync(userAccount, cancellationToken);

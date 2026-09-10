@@ -1,3 +1,3 @@
 namespace NetflixClone.Application.Authentication.Login;
 
-public sealed record LoginResult(int UserAccountId, string Email);
+public sealed record LoginResult(int UserAccountId, string Email, string AccessToken, DateTime ExpiresAtUtc);

@@ -4,6 +4,11 @@ namespace NetflixClone.Application.Authentication.Login;
 
 public static class LoginErrors
 {
+    public static readonly Error RolesNotConfigured = new(
+        "Auth.Login.RolesNotConfigured",
+        "The account has no assigned roles.",
+        ErrorType.Failure);
+
     public static readonly Error InvalidCredentials = new(
         "Auth.Login.InvalidCredentials",
         "The email or password is incorrect.",

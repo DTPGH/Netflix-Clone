@@ -11,17 +11,20 @@ public sealed class LoginUseCase : ILoginUseCase
     private readonly IPasswordHasher _passwordHasher;
     private readonly IClock _clock;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAccessTokenGenerator _accessTokenGenerator;
 
     public LoginUseCase(
         IUserAccountRepository userAccountRepository,
         IPasswordHasher passwordHasher,
         IClock clock,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IAccessTokenGenerator accessTokenGenerator)
     {
         _userAccountRepository = userAccountRepository;
         _passwordHasher = passwordHasher;
         _clock = clock;
         _unitOfWork = unitOfWork;
+        _accessTokenGenerator = accessTokenGenerator;
     }
 
     public async Task<Result<LoginResult>> ExecuteAsync(LoginCommand command, CancellationToken cancellationToken = default)
@@ -87,6 +90,14 @@ public sealed class LoginUseCase : ILoginUseCase
             return Result<LoginResult>.Failure(LoginErrors.EmailNotConfirmed);
         }
 
-        return Result<LoginResult>.Success(new LoginResult(account.Id, account.Email));
+        var roles = await _userAccountRepository.GetRoleNamesAsync(account.Id, cancellationToken);
+        if (roles.Count == 0)
+        {
+            return Result<LoginResult>.Failure(LoginErrors.RolesNotConfigured);
+        }
+
+        var token = _accessTokenGenerator.Generate(account.Id, roles);
+        return Result<LoginResult>.Success(new LoginResult(
+            account.Id, account.Email, token.AccessToken, token.ExpiresAtUtc));
     }
 }
