@@ -6,6 +6,7 @@ using NetflixClone.Application.Authentication.EmailConfirmation;
 using NetflixClone.Application.Authentication.EmailConfirmation.Resend;
 using NetflixClone.Application.Authentication.Register;
 using NetflixClone.Application.Authentication.Login;
+using NetflixClone.Application.Authentication.Refresh;
 using NetflixClone.Application.Common.Results;
 
 namespace NetflixClone.Api.Controllers;
@@ -18,13 +19,37 @@ public sealed class AuthController : ControllerBase
     private readonly IConfirmEmailUseCase _confirmEmailUseCase;
     private readonly IResendEmailConfirmationUseCase _resendEmailConfirmationUseCase;
     private readonly ILoginUseCase _loginUseCase;
+    private readonly IRefreshTokenUseCase _refreshTokenUseCase;
 
-    public AuthController(IRegisterAccountUseCase registerAccountUseCase, IConfirmEmailUseCase confirmEmailUseCase, IResendEmailConfirmationUseCase resendEmailConfirmationUseCase, ILoginUseCase loginUseCase)
+    public AuthController(IRegisterAccountUseCase registerAccountUseCase, IConfirmEmailUseCase confirmEmailUseCase, IResendEmailConfirmationUseCase resendEmailConfirmationUseCase, ILoginUseCase loginUseCase, IRefreshTokenUseCase refreshTokenUseCase)
     {
         _registerAccountUseCase = registerAccountUseCase;
         _confirmEmailUseCase = confirmEmailUseCase;
         _resendEmailConfirmationUseCase = resendEmailConfirmationUseCase;
         _loginUseCase = loginUseCase;
+        _refreshTokenUseCase = refreshTokenUseCase;
+    }
+
+    [AllowAnonymous]
+    [HttpPost("refresh-token")]
+    public async Task<IActionResult> RefreshToken(RefreshTokenRequest request, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var result = await _refreshTokenUseCase.ExecuteAsync(
+            new RefreshTokenCommand(request.RefreshToken), cancellationToken);
+        if (result.IsFailure)
+        {
+            return result.Error!.Type switch
+            {
+                ErrorType.Unauthorized => Unauthorized(new { result.Error.Code, result.Error.Description }),
+                _ => Problem(statusCode: StatusCodes.Status500InternalServerError,
+                    title: "An unexpected error occurred.")
+            };
+        }
+
+        return Ok(new RefreshTokenResponse(
+            result.Value!.AccessToken, result.Value.ExpiresAtUtc,
+            result.Value.RefreshToken, result.Value.RefreshTokenExpiresAtUtc));
     }
 
     [HttpPost("login")]
