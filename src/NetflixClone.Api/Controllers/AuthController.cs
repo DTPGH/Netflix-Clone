@@ -7,6 +7,7 @@ using NetflixClone.Application.Authentication.EmailConfirmation.Resend;
 using NetflixClone.Application.Authentication.Register;
 using NetflixClone.Application.Authentication.Login;
 using NetflixClone.Application.Authentication.Refresh;
+using NetflixClone.Application.Authentication.Logout;
 using NetflixClone.Application.Common.Results;
 
 namespace NetflixClone.Api.Controllers;
@@ -20,14 +21,32 @@ public sealed class AuthController : ControllerBase
     private readonly IResendEmailConfirmationUseCase _resendEmailConfirmationUseCase;
     private readonly ILoginUseCase _loginUseCase;
     private readonly IRefreshTokenUseCase _refreshTokenUseCase;
+    private readonly ILogoutUseCase _logoutUseCase;
 
-    public AuthController(IRegisterAccountUseCase registerAccountUseCase, IConfirmEmailUseCase confirmEmailUseCase, IResendEmailConfirmationUseCase resendEmailConfirmationUseCase, ILoginUseCase loginUseCase, IRefreshTokenUseCase refreshTokenUseCase)
+    public AuthController(IRegisterAccountUseCase registerAccountUseCase, IConfirmEmailUseCase confirmEmailUseCase, IResendEmailConfirmationUseCase resendEmailConfirmationUseCase, ILoginUseCase loginUseCase, IRefreshTokenUseCase refreshTokenUseCase, ILogoutUseCase logoutUseCase)
     {
         _registerAccountUseCase = registerAccountUseCase;
         _confirmEmailUseCase = confirmEmailUseCase;
         _resendEmailConfirmationUseCase = resendEmailConfirmationUseCase;
         _loginUseCase = loginUseCase;
         _refreshTokenUseCase = refreshTokenUseCase;
+        _logoutUseCase = logoutUseCase;
+    }
+
+    [AllowAnonymous]
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout(LogoutRequest request, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var result = await _logoutUseCase.ExecuteAsync(
+            new LogoutCommand(request.RefreshToken), cancellationToken);
+        if (result.IsFailure)
+        {
+            return Problem(statusCode: StatusCodes.Status500InternalServerError,
+                title: "An unexpected error occurred.");
+        }
+
+        return NoContent();
     }
 
     [AllowAnonymous]

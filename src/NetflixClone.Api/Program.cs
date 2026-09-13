@@ -3,6 +3,7 @@ using NetflixClone.Application.Authentication.EmailConfirmation.Resend;
 using NetflixClone.Application.Authentication.Register;
 using NetflixClone.Application.Authentication.Login;
 using NetflixClone.Application.Authentication.Refresh;
+using NetflixClone.Application.Authentication.Logout;
 using NetflixClone.Infrastructure;
 using NetflixClone.Infrastructure.Security;
 using NetflixClone.Api.OpenApi;
@@ -63,6 +64,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddScoped<IRegisterAccountUseCase, RegisterAccountUseCase>();
 builder.Services.AddScoped<ILoginUseCase, LoginUseCase>();
 builder.Services.AddScoped<IRefreshTokenUseCase, RefreshTokenUseCase>();
+builder.Services.AddScoped<ILogoutUseCase, LogoutUseCase>();
 builder.Services.AddScoped<IConfirmEmailUseCase, ConfirmEmailUseCase>();
 builder.Services.AddScoped<IResendEmailConfirmationUseCase, ResendEmailConfirmationUseCase>();
 
