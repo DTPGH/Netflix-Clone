@@ -100,7 +100,7 @@ Mục tiêu học tập chính của dự án:
 
 ### 5.4. Profile
 
-- Một tài khoản có thể tạo, cập nhật, lựa chọn và xóa mềm các Profile trong giới hạn của gói cước đang hoạt động.
+- Một tài khoản có thể tạo tối đa 5 Profiles, cập nhật, lựa chọn và xóa mềm các Profile.
 - Profile có thể là Kids Profile; nội dung được lọc theo `MaturityLevel` và `Movie.MinAge`.
 - Profile có thể đặt PIN; PIN phải được lưu dưới dạng hash.
 - Profile mới thực hiện onboarding bằng cách chọn một số Movie yêu thích để làm tín hiệu recommendation ban đầu.

@@ -1,9 +1,13 @@
 // using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using NetflixClone.Api.Contracts.Authentication;
 using NetflixClone.Application.Authentication.EmailConfirmation;
 using NetflixClone.Application.Authentication.EmailConfirmation.Resend;
 using NetflixClone.Application.Authentication.Register;
+using NetflixClone.Application.Authentication.Login;
+using NetflixClone.Application.Authentication.Refresh;
+using NetflixClone.Application.Authentication.Logout;
 using NetflixClone.Application.Common.Results;
 
 namespace NetflixClone.Api.Controllers;
@@ -15,12 +19,105 @@ public sealed class AuthController : ControllerBase
     private readonly IRegisterAccountUseCase _registerAccountUseCase;
     private readonly IConfirmEmailUseCase _confirmEmailUseCase;
     private readonly IResendEmailConfirmationUseCase _resendEmailConfirmationUseCase;
+    private readonly ILoginUseCase _loginUseCase;
+    private readonly IRefreshTokenUseCase _refreshTokenUseCase;
+    private readonly ILogoutUseCase _logoutUseCase;
 
-    public AuthController(IRegisterAccountUseCase registerAccountUseCase, IConfirmEmailUseCase confirmEmailUseCase, IResendEmailConfirmationUseCase resendEmailConfirmationUseCase)
+    public AuthController(IRegisterAccountUseCase registerAccountUseCase, IConfirmEmailUseCase confirmEmailUseCase, IResendEmailConfirmationUseCase resendEmailConfirmationUseCase, ILoginUseCase loginUseCase, IRefreshTokenUseCase refreshTokenUseCase, ILogoutUseCase logoutUseCase)
     {
         _registerAccountUseCase = registerAccountUseCase;
         _confirmEmailUseCase = confirmEmailUseCase;
         _resendEmailConfirmationUseCase = resendEmailConfirmationUseCase;
+        _loginUseCase = loginUseCase;
+        _refreshTokenUseCase = refreshTokenUseCase;
+        _logoutUseCase = logoutUseCase;
+    }
+
+    [AllowAnonymous]
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout(LogoutRequest request, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var result = await _logoutUseCase.ExecuteAsync(
+            new LogoutCommand(request.RefreshToken), cancellationToken);
+        if (result.IsFailure)
+        {
+            return Problem(statusCode: StatusCodes.Status500InternalServerError,
+                title: "An unexpected error occurred.");
+        }
+
+        return NoContent();
+    }
+
+    [AllowAnonymous]
+    [HttpPost("refresh-token")]
+    public async Task<IActionResult> RefreshToken(RefreshTokenRequest request, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var result = await _refreshTokenUseCase.ExecuteAsync(
+            new RefreshTokenCommand(request.RefreshToken), cancellationToken);
+        if (result.IsFailure)
+        {
+            return result.Error!.Type switch
+            {
+                ErrorType.Unauthorized => Unauthorized(new { result.Error.Code, result.Error.Description }),
+                _ => Problem(statusCode: StatusCodes.Status500InternalServerError,
+                    title: "An unexpected error occurred.")
+            };
+        }
+
+        return Ok(new RefreshTokenResponse(
+            result.Value!.AccessToken, result.Value.ExpiresAtUtc,
+            result.Value.RefreshToken, result.Value.RefreshTokenExpiresAtUtc));
+    }
+
+    [HttpPost("login")]
+    public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
+    {
+        var userAgent = Request.Headers.UserAgent.ToString();
+        var command = new LoginCommand(
+            request.Email, request.Password, request.DeviceIdentifier,
+            request.DeviceName, request.DeviceType,
+            userAgent.Length > 500 ? userAgent[..500] : userAgent,
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+        var result = await _loginUseCase.ExecuteAsync(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return result.Error!.Type switch
+            {
+                ErrorType.Unauthorized => Unauthorized(new
+                {
+                    result.Error.Code,
+                    result.Error.Description
+                }),
+                ErrorType.Forbidden => StatusCode(StatusCodes.Status403Forbidden, new
+                {
+                    result.Error.Code,
+                    result.Error.Description
+                }),
+                _ => Problem(
+                    statusCode: StatusCodes.Status500InternalServerError,
+                    title: "An unexpected error occurred.")
+            };
+        }
+
+        return Ok(new LoginResponse(
+            result.Value!.UserAccountId, result.Value.Email,
+            result.Value.AccessToken, result.Value.ExpiresAtUtc,
+            result.Value.RefreshToken, result.Value.RefreshTokenExpiresAtUtc,
+            result.Value.DeviceIdentifier));
+    }
+
+    [Authorize]
+    [HttpGet("me")]
+    public IActionResult Me()
+    {
+        return Ok(new
+        {
+            UserAccountId = User.FindFirst("sub")!.Value,
+            Roles = User.FindAll("role").Select(claim => claim.Value).ToArray()
+        });
     }
 
     [HttpPost("register")]

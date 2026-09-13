@@ -1,7 +1,15 @@
 using NetflixClone.Application.Authentication.EmailConfirmation;
 using NetflixClone.Application.Authentication.EmailConfirmation.Resend;
 using NetflixClone.Application.Authentication.Register;
+using NetflixClone.Application.Authentication.Login;
+using NetflixClone.Application.Authentication.Refresh;
+using NetflixClone.Application.Authentication.Logout;
 using NetflixClone.Infrastructure;
+using NetflixClone.Infrastructure.Security;
+using NetflixClone.Api.OpenApi;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,13 +22,65 @@ var connectionString = builder.Configuration.GetConnectionString("NetflixCloneDb
 
 builder.Services.AddInfrastructure(connectionString);
 
+var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
+    ?? throw new InvalidOperationException("Jwt configuration is required.");
+jwtOptions.Validate();
+builder.Services.AddSingleton(jwtOptions);
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(jwtOptions.GetSigningKeyBytes()),
+            ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 },
+            RequireSignedTokens = true,
+            ValidateIssuer = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtOptions.Audience,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            ClockSkew = TimeSpan.FromSeconds(30),
+            NameClaimType = "sub",
+            RoleClaimType = "role"
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = context =>
+            {
+                if (!int.TryParse(context.Principal?.FindFirst("sub")?.Value, out var accountId) || accountId <= 0)
+                {
+                    context.Fail("The token subject is invalid.");
+                }
+                return Task.CompletedTask;
+            }
+        };
+    });
+builder.Services.AddAuthorization();
+
 builder.Services.AddScoped<IRegisterAccountUseCase, RegisterAccountUseCase>();
+builder.Services.AddScoped<ILoginUseCase, LoginUseCase>();
+builder.Services.AddScoped<IRefreshTokenUseCase, RefreshTokenUseCase>();
+builder.Services.AddScoped<ILogoutUseCase, LogoutUseCase>();
 builder.Services.AddScoped<IConfirmEmailUseCase, ConfirmEmailUseCase>();
 builder.Services.AddScoped<IResendEmailConfirmationUseCase, ResendEmailConfirmationUseCase>();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "Paste the access token returned by Login."
+    });
+    options.OperationFilter<AuthorizeOperationFilter>();
+});
 
 var app = builder.Build();
 
@@ -33,6 +93,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 
