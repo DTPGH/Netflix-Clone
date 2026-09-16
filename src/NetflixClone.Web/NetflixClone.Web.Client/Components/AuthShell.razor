@@ -1,0 +1,72 @@
+@implements IDisposable
+@using Microsoft.AspNetCore.Components.Routing
+@inject AuthSession Session
+@inject NavigationManager Navigation
+
+<div class="site-frame">
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <header class="site-header border-bottom">
+        <nav class="container d-flex flex-wrap align-items-center justify-content-between gap-3 py-3" aria-label="Main navigation">
+            <NavLink class="brand text-decoration-none" href="/" Match="NavLinkMatch.All">NETFLIX<span class="brand-suffix">CLONE</span></NavLink>
+            <div class="d-flex align-items-center gap-3">
+                <AuthorizeView>
+                    <Authorized>
+                        <NavLink class="nav-link" href="/">My account</NavLink>
+                        <button class="btn btn-outline-light" disabled="@Session.IsLoggingOut" @onclick="Logout">@(Session.IsLoggingOut ? "Signing out…" : "Sign out")</button>
+                    </Authorized>
+                    <NotAuthorized>
+                        <NavLink class="nav-link" href="/register">Join now</NavLink>
+                        <NavLink class="btn btn-outline-light" href="/login">Sign in</NavLink>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </nav>
+    </header>
+    <main id="main-content" class="container py-4 py-lg-5 flex-grow-1">
+        @if (!Session.Initialized)
+        {
+            <div class="py-5 text-center" role="status"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Checking your session…</div>
+        }
+        else
+        {
+            @if (Session.Notice is not null)
+            {
+                <div class="alert alert-secondary mb-4" role="status">@Session.Notice</div>
+            }
+            @ChildContent
+        }
+    </main>
+    <footer class="container py-4 border-top d-flex flex-wrap justify-content-between gap-2 small text-muted">
+        <span>Netflix Clone · A learning project</span><span>One account. A simple place to start.</span>
+    </footer>
+</div>
+
+@code {
+    private string? _logoutRedirect;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+        await Session.InitializeAsync();
+    }
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+    private async Task Logout()
+    {
+        await Session.LogoutAsync();
+        _logoutRedirect = Navigation.ToAbsoluteUri("/login").AbsoluteUri;
+        Navigation.NavigateTo("/login");
+    }
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        // Keep the message through the logout redirect, but not later navigation.
+        var isLogoutRedirect = args.Location == _logoutRedirect;
+        _logoutRedirect = null;
+        if (!isLogoutRedirect) Session.DismissLogoutNotice();
+    }
+    public void Dispose()
+    {
+        Session.Changed -= OnChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}
