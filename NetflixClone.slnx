@@ -5,4 +5,8 @@
     <Project Path="src/NetflixClone.Domain/NetflixClone.Domain.csproj" />
     <Project Path="src/NetflixClone.Infrastructure/NetflixClone.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/NetflixClone.Web/">
+    <Project Path="src/NetflixClone.Web/NetflixClone.Web.Client/NetflixClone.Web.Client.csproj" />
+    <Project Path="src/NetflixClone.Web/NetflixClone.Web/NetflixClone.Web.csproj" />
+  </Folder>
 </Solution>
