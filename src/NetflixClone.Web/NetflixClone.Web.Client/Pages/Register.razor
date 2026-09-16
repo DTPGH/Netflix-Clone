@@ -1,0 +1,86 @@
+@page "/register"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@inject AuthApiClient Api
+
+<AuthShell>
+    <div class="row g-4 gx-lg-5 align-items-center">
+        <div class="col-lg-6 d-none d-lg-block">
+            <p class="eyebrow">MAKE IT YOURS</p>
+            <h2 class="display-4 fw-bold">A little sign up.<br />A new beginning.</h2>
+            <p class="lead text-muted mt-4 hero-copy">Start with the essentials. You can confirm your email in the next
+                step.</p>
+            </div>
+            <div class="col-lg-6">
+                <section class="auth-panel p-4 p-md-5 form-panel mx-auto">
+                    @if (registered is not null)
+                    {
+                        <span class="badge text-bg-success mb-3">Account created</span>
+                        <h1 class="h2">One more step.</h1>
+                        <p class="text-muted">Confirm <strong>@registered.Email</strong> before signing in.</p>
+                        <p>Your account number is <strong>@registered.UserAccountId</strong>.</p>
+                        <NavLink class="btn btn-danger btn-lg w-100 mt-3"
+                                 href="@($"/confirm-email?accountId={registered.UserAccountId}")">Confirm email</NavLink>
+                        <NavLink class="d-block text-center mt-3" href="/login">Back to sign in</NavLink>
+                    }
+                    else
+                    {
+                        <h1 class="h2 mb-2">Create an account</h1>
+                        <p class="text-muted mb-4">Your first step starts here.</p>
+                        @if (error is not null)
+                        {
+                            <div class="alert alert-danger" role="alert">@error</div>
+                        }
+                        <EditForm Model="form" OnValidSubmit="Submit" FormName="register">
+                            <DataAnnotationsValidator />
+                            <fieldset disabled="@busy">
+                                <div class="mb-3">
+                                    <label for="register-email" class="form-label">Email address</label>
+                                    <InputText id="register-email" class="form-control form-control-lg" type="email"
+                                               autocomplete="username" @bind-Value="form.Email" />
+                                    <ValidationMessage For="() => form.Email" />
+                                </div>
+                                <div class="mb-3">
+                                    <label for="register-password" class="form-label">Password</label>
+                                    <InputText id="register-password" class="form-control form-control-lg" type="password"
+                                               autocomplete="new-password" aria-describedby="password-help"
+                                               @bind-Value="form.Password" />
+                                    <div id="password-help" class="form-text">Use 8–64 characters. Your password is
+                                        case-sensitive.</div>
+                                        <ValidationMessage For="() => form.Password" />
+                                    </div>
+                                    <div class="mb-4">
+                                        <label for="register-confirm" class="form-label">Confirm password</label>
+                                        <InputText id="register-confirm" class="form-control form-control-lg" type="password"
+                                                   autocomplete="new-password" @bind-Value="form.ConfirmPassword" />
+                                        <ValidationMessage For="() => form.ConfirmPassword" />
+                                    </div>
+                                    <button class="btn btn-danger btn-lg w-100" type="submit">@(busy ? "Creating account…" : "Create account")</button>
+                                </fieldset>
+                            </EditForm>
+                            <p class="text-muted mt-4 mb-0">Already have an account? <NavLink href="/login">Sign in</NavLink>
+                            </p>
+                        }
+                    </section>
+                </div>
+            </div>
+        </AuthShell>
+
+@code {
+    private RegisterForm form = new();
+    private RegisterReply? registered;
+    private bool busy;
+    private string? error;
+    private async Task Submit()
+    {
+        if (busy) return;
+        busy = true; error = null;
+        try
+        {
+            var reply = await Api.RegisterAsync(form);
+            if (reply.Success) registered = reply.Value;
+            else error = reply.Error;
+        }
+        finally { form.Password = ""; form.ConfirmPassword = ""; busy = false; }
+    }
+}
+

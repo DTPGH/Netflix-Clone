@@ -1,0 +1,93 @@
+@page "/"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@inject AuthSession Session
+
+<AuthShell>
+    <AuthorizeView>
+        <Authorized Context="auth">
+            <div class="row g-4 gx-lg-5 align-items-center">
+                <div class="col-lg-6">
+                    <p class="eyebrow">YOUR ACCOUNT</p>
+                    <h1 class="display-5 fw-bold">Welcome back.</h1>
+                    <p class="lead text-muted">You’re signed in. Your account is ready for what comes next.</p>
+                </div>
+                <div class="col-lg-6">
+                    <section class="auth-panel p-4 p-md-5" aria-labelledby="account-title">
+                        <span class="badge text-bg-success mb-3">Signed in</span>
+                        <h2 id="account-title" class="h3">@auth.User.Identity?.Name</h2>
+                        <dl class="row mt-4 mb-3">
+                            <dt class="col-sm-5">Roles</dt>
+                            <dd class="col-sm-7">@string.Join(", ",
+                                                                  auth.User.FindAll(System.Security.Claims.ClaimTypes.Role).Select(c => c.Value))</dd>
+                                <dt class="col-sm-5">Access expires</dt>
+                                <dd class="col-sm-7">@Session.AccessExpiresAtUtc?.ToLocalTime().ToString("g")</dd>
+                            </dl>
+                            <button class="btn btn-outline-light w-100" disabled="@checking"
+                                    @onclick="CheckSession">@(checking ? "Checking…" : "Check session")</button>
+                            @if (checkedOk)
+                            {
+                                <p class="text-success mt-3 mb-0" role="status">Your session was confirmed by
+                                    the service.</p>
+                                }
+                            </section>
+                        </div>
+                    </div>
+                </Authorized>
+                <NotAuthorized>
+                    <div class="row g-4 gx-lg-5 align-items-center hero-row">
+                        <div class="col-lg-7">
+                            <p class="eyebrow">THE NEXT CHAPTER STARTS HERE</p>
+                            <h1 class="display-3 fw-bold">Your own<br /><span class="accent-text">front-row seat.</span></h1>
+                            <p class="lead text-muted mt-4 hero-copy">Create an account, confirm your email, and make yourself
+                                at home.</p>
+                                <div class="d-flex flex-wrap gap-3 mt-4">
+                                    <NavLink class="btn btn-danger btn-lg" href="/register">Create an account <span
+                                        aria-hidden="true">→</span></NavLink>
+                                        <NavLink class="btn btn-outline-light btn-lg" href="/login">Sign in</NavLink>
+                                    </div>
+                                    <p class="small text-muted mt-3">No payment required. This is a portfolio project.</p>
+                                </div>
+                                <div class="col-lg-5">
+                                    <section class="auth-panel p-4 p-md-5" aria-labelledby="steps-title">
+                                        <p class="eyebrow">GETTING STARTED</p>
+                                        <h2 class="h3 mb-4" id="steps-title">Three simple steps.</h2>
+                                        <ol class="step-list list-unstyled mb-0">
+                                            <li><span class="step-number">1</span>
+                                                <div>
+                                                    <h3 class="h6">Create your account</h3>
+                                                    <p class="text-muted mb-0">Use your email and a password.</p>
+                                                </div>
+                                            </li>
+                                            <li><span class="step-number">2</span>
+                                                <div>
+                                                    <h3 class="h6">Confirm your email</h3>
+                                                    <p class="text-muted mb-0">Finish verification to activate sign in.</p>
+                                                </div>
+                                            </li>
+                                            <li><span class="step-number">3</span>
+                                                <div>
+                                                    <h3 class="h6">Make yourself at home</h3>
+                                                    <p class="text-muted mb-0">Sign in and manage your session.</p>
+                                                </div>
+                                            </li>
+                                        </ol>
+                                    </section>
+                                </div>
+                            </div>
+                            <div class="mt-4">
+                                <button class="btn btn-link px-0" disabled="@checking" @onclick="CheckSession">@(checking ? "Checking…" : "Already signed in here? Check saved session")</button>
+                            </div>
+                        </NotAuthorized>
+                    </AuthorizeView>
+                </AuthShell>
+
+@code {
+    private bool checking, checkedOk;
+    private async Task CheckSession()
+    {
+        checking = true; checkedOk = false; try { checkedOk = await Session.VerifyAsync(); }
+        finally { checking = false; }
+    }
+}
+
+

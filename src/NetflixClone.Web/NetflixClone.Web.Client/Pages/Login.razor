@@ -1,0 +1,81 @@
+@page "/login"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@inject AuthSession Session
+@inject NavigationManager Navigation
+
+<AuthShell>
+    <div class="row g-4 gx-lg-5 align-items-center">
+        <div class="col-lg-6 d-none d-lg-block">
+            <p class="eyebrow">WELCOME BACK</p>
+            <h2 class="display-4 fw-bold">A familiar place.<br />A fresh start.</h2>
+            <p class="lead text-muted mt-4 hero-copy">Sign in to your account and pick up where you left off.</p>
+        </div>
+        <div class="col-lg-6">
+            <section class="auth-panel p-4 p-md-5 form-panel mx-auto">
+                <h1 class="h2 mb-2">Sign in</h1>
+                <p class="text-muted mb-4">Good to see you again.</p>
+                @if (error is not null)
+                {
+                    <div class="alert alert-danger" role="alert">@error</div>
+                }
+                <EditForm Model="form" OnValidSubmit="Submit" FormName="login">
+                    <DataAnnotationsValidator />
+                    <fieldset disabled="@(busy || !Session.StorageReady)">
+                        <div class="mb-3">
+                            <label for="login-email" class="form-label">Email address</label>
+                            <InputText id="login-email" class="form-control form-control-lg" type="email"
+                                       autocomplete="username" @bind-Value="form.Email" />
+                            <ValidationMessage For="() => form.Email" />
+                        </div>
+                        <div class="mb-3">
+                            <label for="login-password" class="form-label">Password</label>
+                            <InputText id="login-password" class="form-control form-control-lg"
+                                       type="@(showPassword ? "text" : "password")" autocomplete="current-password"
+                                       @bind-Value="form.Password" />
+                            <ValidationMessage For="() => form.Password" />
+                        </div>
+                        <div class="form-check mb-3">
+                            <InputCheckbox id="show-login-password" class="form-check-input"
+                                           @bind-Value="showPassword" />
+                            <label class="form-check-label" for="show-login-password">Show password</label>
+                        </div>
+                        <div class="mb-4">
+                            <label for="device-name" class="form-label">Name this browser</label>
+                            <InputText id="device-name" class="form-control" maxlength="200"
+                                       aria-describedby="device-help" @bind-Value="form.DeviceName" />
+                            <div id="device-help" class="form-text">For example, “Home laptop”. This helps you recognize
+                                it.</div>
+                                <ValidationMessage For="() => form.DeviceName" />
+                            </div>
+                            <button class="btn btn-danger btn-lg w-100" type="submit">@(busy ? "Signing in…" : "Sign in")</button>
+                        </fieldset>
+                    </EditForm>
+                    <p class="small text-muted mt-3">This browser remembers your session. Sign out when using a shared
+                        device.</p>
+                        <div class="border-top pt-3 mt-4">
+                            <p class="mb-2">New here? <NavLink href="/register">Create an account</NavLink>
+                            </p>
+                            <NavLink class="small" href="/confirm-email">Need to confirm your email?</NavLink>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </AuthShell>
+
+@code {
+    private LoginForm form = new();
+    private bool busy, showPassword;
+    private string? error;
+    private async Task Submit()
+    {
+        if (busy) return;
+        busy = true; error = null;
+        try
+        {
+            error = await Session.LoginAsync(form);
+            if (error is null) Navigation.NavigateTo("/");
+        }
+        finally { form.Password = ""; busy = false; }
+    }
+}
+
