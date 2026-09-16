@@ -61,6 +61,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+var webOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+builder.Services.AddCors(options => options.AddPolicy("WebClient", policy =>
+{
+    if (webOrigins.Length > 0)
+        policy.WithOrigins(webOrigins).WithMethods("GET", "POST").WithHeaders("Content-Type", "Authorization");
+}));
+
 builder.Services.AddScoped<IRegisterAccountUseCase, RegisterAccountUseCase>();
 builder.Services.AddScoped<ILoginUseCase, LoginUseCase>();
 builder.Services.AddScoped<IRefreshTokenUseCase, RefreshTokenUseCase>();
@@ -93,6 +100,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("WebClient");
 app.UseAuthentication();
 app.UseAuthorization();
 

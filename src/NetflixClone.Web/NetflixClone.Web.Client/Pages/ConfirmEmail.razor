@@ -1,0 +1,95 @@
+@page "/confirm-email"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@inject AuthApiClient Api
+@inject IWebAssemblyHostEnvironment Environment
+
+<AuthShell>
+    <div class="form-panel mx-auto">
+        <section class="auth-panel p-4 p-md-5">
+            <p class="eyebrow">FINISH SETTING UP</p>
+            <h1 class="h2">Confirm your email</h1>
+            <p class="text-muted">Enter your account number and confirmation code.</p>
+            @if (Environment.IsDevelopment())
+            {
+                <p class="small text-muted">Local development: email delivery is simulated. Use the account number and code
+                    from the API development terminal.</p>
+                }
+                @if (error is not null)
+                {
+                    <div class="alert alert-danger" role="alert">@error</div>
+                }
+                @if (confirmed)
+                {
+                    <div class="alert alert-success" role="status">Your email is confirmed. You can now sign in.</div>
+                    <NavLink class="btn btn-danger btn-lg w-100" href="/login">Continue to sign in</NavLink>
+                }
+                else
+                {
+                    <EditForm Model="form" OnValidSubmit="Confirm" FormName="confirm-email">
+                        <DataAnnotationsValidator />
+                        <fieldset disabled="@busy">
+                            <div class="mb-3">
+                                <label class="form-label" for="account-number">Account number</label>
+                                <InputNumber id="account-number" class="form-control" @bind-Value="form.UserAccountId" />
+                                <ValidationMessage For="() => form.UserAccountId" />
+                            </div>
+                            <div class="mb-4">
+                                <label class="form-label" for="confirmation-code">Confirmation code</label>
+                                <InputText id="confirmation-code" type="password" autocomplete="off" class="form-control"
+                                           @bind-Value="form.Token" />
+                                <ValidationMessage For="() => form.Token" />
+                            </div>
+                            <button class="btn btn-danger w-100" type="submit">@(busy ? "Confirming…" : "Confirm email")</button>
+                        </fieldset>
+                    </EditForm>
+                }
+            </section>
+            <section class="auth-panel p-4 mt-3" aria-labelledby="resend-title">
+                <h2 class="h5" id="resend-title">Need a new code?</h2>
+                <p class="small text-muted">Request another confirmation for your email address.</p>
+                @if (resendMessage is not null)
+                {
+                    <div class="alert alert-secondary" role="status">@resendMessage</div>
+                }
+                <EditForm Model="resend" OnValidSubmit="Resend" FormName="resend-email">
+                    <DataAnnotationsValidator />
+                    <label class="form-label" for="resend-email">Email address</label>
+                    <InputText id="resend-email" class="form-control" type="email" autocomplete="email"
+                               @bind-Value="resend.Email" />
+                    <ValidationMessage For="() => resend.Email" />
+                    <button class="btn btn-outline-light w-100 mt-3" disabled="@resending" type="submit">@(resending ?
+                                                                                                                                           "Requesting…" : "Send a new code")</button>
+                    </EditForm>
+                </section>
+            </div>
+        </AuthShell>
+
+@code {
+    [SupplyParameterFromQuery(Name = "accountId")] public int? AccountId { get; set; }
+    private ConfirmForm form = new();
+    private ResendForm resend = new();
+    private bool busy, confirmed, resending;
+    private string? error, resendMessage;
+    protected override void OnParametersSet() { if (AccountId is > 0) form.UserAccountId = AccountId.Value; }
+    private async Task Confirm()
+    {
+        if (busy) return;
+        busy = true; error = null;
+        try { var result = await Api.ConfirmAsync(form); confirmed = result.Success; error = result.Error; }
+        finally { form.Token = ""; busy = false; }
+    }
+    private async Task Resend()
+    {
+        if (resending) return;
+        resending = true;
+        try
+        {
+            var result = await Api.ResendAsync(resend);
+            resendMessage = result.Success
+                ? "If an unconfirmed account exists for this email, a confirmation email has been sent."
+                : result.Error;
+        }
+        finally { resending = false; }
+    }
+}
+
