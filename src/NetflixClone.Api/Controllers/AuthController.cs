@@ -8,6 +8,7 @@ using NetflixClone.Application.Authentication.Register;
 using NetflixClone.Application.Authentication.Login;
 using NetflixClone.Application.Authentication.Refresh;
 using NetflixClone.Application.Authentication.Logout;
+using NetflixClone.Application.Authentication.Devices;
 using NetflixClone.Application.Common.Results;
 
 namespace NetflixClone.Api.Controllers;
@@ -22,8 +23,10 @@ public sealed class AuthController : ControllerBase
     private readonly ILoginUseCase _loginUseCase;
     private readonly IRefreshTokenUseCase _refreshTokenUseCase;
     private readonly ILogoutUseCase _logoutUseCase;
+    private readonly IListDevicesUseCase _listDevicesUseCase;
+    private readonly IRevokeDeviceUseCase _revokeDeviceUseCase;
 
-    public AuthController(IRegisterAccountUseCase registerAccountUseCase, IConfirmEmailUseCase confirmEmailUseCase, IResendEmailConfirmationUseCase resendEmailConfirmationUseCase, ILoginUseCase loginUseCase, IRefreshTokenUseCase refreshTokenUseCase, ILogoutUseCase logoutUseCase)
+    public AuthController(IRegisterAccountUseCase registerAccountUseCase, IConfirmEmailUseCase confirmEmailUseCase, IResendEmailConfirmationUseCase resendEmailConfirmationUseCase, ILoginUseCase loginUseCase, IRefreshTokenUseCase refreshTokenUseCase, ILogoutUseCase logoutUseCase, IListDevicesUseCase listDevicesUseCase, IRevokeDeviceUseCase revokeDeviceUseCase)
     {
         _registerAccountUseCase = registerAccountUseCase;
         _confirmEmailUseCase = confirmEmailUseCase;
@@ -31,7 +34,44 @@ public sealed class AuthController : ControllerBase
         _loginUseCase = loginUseCase;
         _refreshTokenUseCase = refreshTokenUseCase;
         _logoutUseCase = logoutUseCase;
+        _listDevicesUseCase = listDevicesUseCase;
+        _revokeDeviceUseCase = revokeDeviceUseCase;
     }
+
+    [Authorize]
+    [HttpGet("devices")]
+    public async Task<IActionResult> ListDevices(CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        if (!TryGetAccountId(out var accountId)) return Unauthorized();
+        var result = await _listDevicesUseCase.ExecuteAsync(new ListDevicesQuery(accountId), cancellationToken);
+        if (result.IsFailure) return Problem(statusCode: 500, title: "An unexpected error occurred.");
+        return Ok(new DevicesResponse(result.Value!.Devices.Select(device => new DeviceResponse(
+            device.DeviceId, device.DeviceName, device.DeviceType, device.FirstSeenAtUtc,
+            device.LastActiveAtUtc, device.RevokedAtUtc)).ToArray()));
+    }
+
+    [Authorize]
+    [HttpPost("devices/{deviceId:int:min(1)}/revoke")]
+    public async Task<IActionResult> RevokeDevice(int deviceId, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        if (!TryGetAccountId(out var accountId)) return Unauthorized();
+        var result = await _revokeDeviceUseCase.ExecuteAsync(new RevokeDeviceCommand(accountId, deviceId), cancellationToken);
+        if (result.IsFailure)
+        {
+            return result.Error!.Type switch
+            {
+                ErrorType.NotFound => NotFound(new { result.Error.Code, result.Error.Description }),
+                ErrorType.Conflict => Conflict(new { result.Error.Code, result.Error.Description }),
+                _ => Problem(statusCode: 500, title: "An unexpected error occurred.")
+            };
+        }
+        return NoContent();
+    }
+
+    private bool TryGetAccountId(out int accountId)
+        => int.TryParse(User.FindFirst("sub")?.Value, out accountId) && accountId > 0;
 
     [AllowAnonymous]
     [HttpPost("logout")]
@@ -96,6 +136,7 @@ public sealed class AuthController : ControllerBase
                     result.Error.Code,
                     result.Error.Description
                 }),
+                ErrorType.Conflict => Conflict(new { result.Error.Code, result.Error.Description }),
                 _ => Problem(
                     statusCode: StatusCodes.Status500InternalServerError,
                     title: "An unexpected error occurred.")

@@ -2,6 +2,7 @@ using NetflixClone.Application.Common.Abstractions.Persistence;
 using NetflixClone.Application.Common.Abstractions.Security;
 using NetflixClone.Application.Common.Abstractions.Time;
 using NetflixClone.Application.Common.Results;
+using NetflixClone.Application.Common.Exceptions;
 using NetflixClone.Domain.Entities;
 
 namespace NetflixClone.Application.Authentication.Login;
@@ -132,7 +133,8 @@ public sealed class LoginUseCase : ILoginUseCase
         device.DeviceType = command.DeviceType;
         device.UserAgent = command.UserAgent;
         device.IpAddress = command.RemoteIpAddress;
-        device.LastActiveAt = utcNow;
+        // Always change the concurrency value, including equal timestamps or clock rollback.
+        device.LastActiveAt = utcNow > device.LastActiveAt ? utcNow : device.LastActiveAt.AddTicks(1);
 
         var refreshToken = _refreshTokenService.Generate();
         var refreshTokenExpiresAt = utcNow.Add(RefreshTokenRules.Lifetime);
@@ -148,7 +150,14 @@ public sealed class LoginUseCase : ILoginUseCase
         }, cancellationToken);
 
         var token = _accessTokenGenerator.Generate(account.Id, roles);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (PersistenceConcurrencyException)
+        {
+            return Result<LoginResult>.Failure(LoginErrors.ConcurrentChange);
+        }
         return Result<LoginResult>.Success(new LoginResult(
             account.Id, account.Email, token.AccessToken, token.ExpiresAtUtc,
             refreshToken.RawToken, refreshTokenExpiresAt, rawIdentifier!));

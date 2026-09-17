@@ -78,6 +78,8 @@ public sealed class RefreshTokenUseCase : IRefreshTokenUseCase
         await _refreshTokenRepository.AddAsync(replacement, cancellationToken);
         oldToken.RevokedAt = utcNow;
         oldToken.ReplacedByToken = replacement;
+        // Participate in device revocation concurrency in the same rotation transaction.
+        device.LastActiveAt = utcNow > device.LastActiveAt ? utcNow : device.LastActiveAt.AddTicks(1);
 
         var accessToken = _accessTokenGenerator.Generate(account.Id, roles);
         try
@@ -86,7 +88,7 @@ public sealed class RefreshTokenUseCase : IRefreshTokenUseCase
         }
         catch (PersistenceConcurrencyException)
         {
-            // The competing request already consumed the token. Never retry this rotation.
+            // A competing request changed the token or device. Never retry this rotation.
             return Result<RefreshTokenResult>.Failure(RefreshTokenErrors.InvalidRefreshToken);
         }
 

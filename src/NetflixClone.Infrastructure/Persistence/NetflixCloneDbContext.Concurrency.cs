@@ -7,6 +7,12 @@ public partial class NetflixCloneDbContext
 {
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
+        // Every issuance updates LastActiveAt, so revocation detects newly issued sessions too.
+        modelBuilder.Entity<Device>(entity =>
+        {
+            entity.Property(device => device.RevokedAt).IsConcurrencyToken();
+            entity.Property(device => device.LastActiveAt).IsConcurrencyToken();
+        });
         // A refresh token may be consumed only if its persisted state still matches
         // the state read by this context. Keep this configuration outside scaffolded files.
         modelBuilder.Entity<RefreshToken>(entity =>

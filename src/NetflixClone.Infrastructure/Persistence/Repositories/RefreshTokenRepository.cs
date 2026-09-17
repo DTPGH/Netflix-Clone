@@ -10,6 +10,12 @@ public sealed class RefreshTokenRepository : IRefreshTokenRepository
 
     public RefreshTokenRepository(NetflixCloneDbContext dbContext) => _dbContext = dbContext;
 
+    public async Task<IReadOnlyList<RefreshToken>> GetActiveByDeviceAsync(int userAccountId, int deviceId, DateTime utcNow, CancellationToken cancellationToken = default)
+        => await _dbContext.RefreshTokens.Where(token =>
+            token.UserAccountId == userAccountId && token.DeviceId == deviceId &&
+            token.RevokedAt == null && token.ReplacedByTokenId == null && token.ExpiresAt > utcNow)
+            .ToListAsync(cancellationToken);
+
     public Task<RefreshToken?> GetByHashAsync(string tokenHash, CancellationToken cancellationToken = default)
     {
         return _dbContext.RefreshTokens
