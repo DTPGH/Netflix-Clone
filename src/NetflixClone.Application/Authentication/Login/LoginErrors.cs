@@ -4,6 +4,9 @@ namespace NetflixClone.Application.Authentication.Login;
 
 public static class LoginErrors
 {
+    public static readonly Error ConcurrentChange = new(
+        "Auth.Login.ConcurrentChange", "The device or its sessions changed. Please sign in again.", ErrorType.Conflict);
+
     public static readonly Error RolesNotConfigured = new(
         "Auth.Login.RolesNotConfigured",
         "The account has no assigned roles.",
