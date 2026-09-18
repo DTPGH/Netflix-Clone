@@ -5,6 +5,7 @@ using NetflixClone.Application.Authentication.Login;
 using NetflixClone.Application.Authentication.Refresh;
 using NetflixClone.Application.Authentication.Logout;
 using NetflixClone.Application.Authentication.Devices;
+using NetflixClone.Application.Profiles;
 using NetflixClone.Infrastructure;
 using NetflixClone.Infrastructure.Security;
 using NetflixClone.Api.OpenApi;
@@ -66,7 +67,7 @@ var webOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<str
 builder.Services.AddCors(options => options.AddPolicy("WebClient", policy =>
 {
     if (webOrigins.Length > 0)
-        policy.WithOrigins(webOrigins).WithMethods("GET", "POST").WithHeaders("Content-Type", "Authorization");
+        policy.WithOrigins(webOrigins).WithMethods("GET", "POST", "PUT", "DELETE").WithHeaders("Content-Type", "Authorization");
 }));
 
 builder.Services.AddScoped<IRegisterAccountUseCase, RegisterAccountUseCase>();
@@ -75,6 +76,10 @@ builder.Services.AddScoped<IRefreshTokenUseCase, RefreshTokenUseCase>();
 builder.Services.AddScoped<ILogoutUseCase, LogoutUseCase>();
 builder.Services.AddScoped<IListDevicesUseCase, ListDevicesUseCase>();
 builder.Services.AddScoped<IRevokeDeviceUseCase, RevokeDeviceUseCase>();
+builder.Services.AddScoped<IListProfilesUseCase, ListProfilesUseCase>();
+builder.Services.AddScoped<ICreateProfileUseCase, CreateProfileUseCase>();
+builder.Services.AddScoped<IUpdateProfileUseCase, UpdateProfileUseCase>();
+builder.Services.AddScoped<IDeleteProfileUseCase, DeleteProfileUseCase>();
 builder.Services.AddScoped<IConfirmEmailUseCase, ConfirmEmailUseCase>();
 builder.Services.AddScoped<IResendEmailConfirmationUseCase, ResendEmailConfirmationUseCase>();
 
