@@ -37,7 +37,7 @@ Table UserAccounts {
     `FailedLoginCount >= 0` [name: 'CK_UserAccounts_FailedLoginCount']
   }
 
-  Note: 'Authentication identity. IsLocked is reserved for manual Admin lock/unlock, while FailedLoginCount + LockoutEnd handle temporary automatic lockout after repeated failed logins. Email confirmation and password reset store only token hashes plus expiry timestamps. Account deletion is outside the current MVP. The maximum active Profile count is determined by the active Subscription Plan.MaxProfiles rather than a hard-coded account limit.'
+  Note: 'Authentication identity. IsLocked is reserved for manual Admin lock/unlock, while FailedLoginCount + LockoutEnd handle temporary automatic lockout after repeated failed logins. Email confirmation and password reset store only token hashes plus expiry timestamps. Account deletion is outside the current MVP. Each account may have at most 5 active Profiles (IsDeleted = 0), independently of subscription or plan. This application business rule requires concurrency-safe enforcement and is not a database constraint.'
 }
 
 // Bổ sung phân quyền chia thành bảng Roles, UserRole
@@ -118,7 +118,7 @@ Table Profiles {
     `(IsDeleted = 0 AND DeletedAt IS NULL) OR (IsDeleted = 1 AND DeletedAt IS NOT NULL)` [name: 'CK_Profiles_SoftDeleteState']
   }
 
-  Note: 'Viewing/personalization identity. PIN is optional and must be stored as a hash when configured. Profile deletion uses soft delete: active profiles have IsDeleted = 0 and DeletedAt = NULL; deleted profiles remain in the database for historical/analytics integrity but cannot be selected or used for new viewing/personalization actions. The maximum number of active Profiles is enforced from the owning account active Subscription Plan.MaxProfiles.'
+  Note: 'Viewing/personalization identity. PIN is optional and must be stored as a hash when configured. Profile deletion uses soft delete: active profiles have IsDeleted = 0 and DeletedAt = NULL; deleted profiles remain in the database for historical/analytics integrity but cannot be selected or used for new viewing/personalization actions. Each account may have at most 5 active Profiles (IsDeleted = 0); soft-deleted Profiles do not count. The limit is independent of subscription or plan and requires concurrency-safe application enforcement.'
 }
 
 Table RefreshTokens {
@@ -148,7 +148,6 @@ Table Plans {
   Id int [pk, increment]
   Name nvarchar(100) [not null, unique]
   Price decimal(18,2) [not null]
-  //MaxProfiles int [not null]
   MaxConcurrentStreams int [not null]
   MaxQuality nvarchar(20) [not null, note: 'Example values: 480p, 720p, 1080p, 4K']
   IsActive bit [not null, default: 1]
@@ -157,11 +156,10 @@ Table Plans {
 
   Checks {
     `Price >= 0` [name: 'CK_Plans_Price']
-    `MaxProfiles > 0` [name: 'CK_Plans_MaxProfiles']
     `MaxConcurrentStreams > 0` [name: 'CK_Plans_MaxConcurrentStreams']
   }
 
-  Note: 'Subscription plan configuration. MaxProfiles limits active Profiles for an account; MaxConcurrentStreams limits simultaneous active ViewingSessions across all Profiles owned by that account. MaxQuality is reserved for playback-quality enforcement when multi-quality video assets are introduced.'
+  Note: 'Subscription plan configuration; MaxConcurrentStreams limits simultaneous active ViewingSessions across all Profiles owned by that account. MaxQuality is reserved for playback-quality enforcement when multi-quality video assets are introduced.'
 }
 
 Table Subscriptions {
@@ -441,7 +439,7 @@ Table AdminActionLogs {
   Relationships / delete policy
 
   - UserAccounts: manual Admin Lock/Unlock uses IsLocked; automatic temporary login lockout uses FailedLoginCount + LockoutEnd; no Account delete flow.
-  - Profile count limit is derived from the account active Subscription Plan.MaxProfiles.
+  - Each account may have at most 5 active Profiles (IsDeleted = 0), independently of subscription or plan. Soft-deleted Profiles do not count. This rule requires concurrency-safe application enforcement; no schema constraint currently enforces the count.
   - Concurrent playback limit is derived from Plan.MaxConcurrentStreams by counting active ViewingSessions (EndedAt IS NULL) across Profiles owned by the account. Devices are NOT counted for this rule; ViewingSessions.DeviceId only records where playback occurred.
   - Devices exists for Manage Devices / remote sign-out. Removing a device sets Devices.RevokedAt and revokes every active RefreshToken associated with that DeviceId; the device row is retained for history.
   - Profiles: deletion is SOFT DELETE through IsDeleted + DeletedAt.

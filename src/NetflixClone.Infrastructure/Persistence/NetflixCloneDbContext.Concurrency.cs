@@ -7,6 +7,11 @@ public partial class NetflixCloneDbContext
 {
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Profile>(entity =>
+        {
+            entity.Property(profile => profile.IsDeleted).IsConcurrencyToken();
+            entity.Property(profile => profile.UpdatedAt).IsConcurrencyToken();
+        });
         // Every issuance updates LastActiveAt, so revocation detects newly issued sessions too.
         modelBuilder.Entity<Device>(entity =>
         {

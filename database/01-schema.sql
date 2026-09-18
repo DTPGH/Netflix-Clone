@@ -436,7 +436,7 @@ GO
 
 EXEC sp_addextendedproperty
 @name = N'Table_Description',
-@value = 'Authentication identity. IsLocked is reserved for manual Admin lock/unlock, while FailedLoginCount + LockoutEnd handle temporary automatic lockout after repeated failed logins. Email confirmation and password reset store only token hashes plus expiry timestamps. Account deletion is outside the current MVP. The maximum active Profile count is determined by the active Subscription Plan.MaxProfiles rather than a hard-coded account limit.',
+@value = 'Authentication identity. IsLocked is reserved for manual Admin lock/unlock, while FailedLoginCount + LockoutEnd handle temporary automatic lockout after repeated failed logins. Email confirmation and password reset store only token hashes plus expiry timestamps. Account deletion is outside the current MVP. Each account may have at most 5 active Profiles (IsDeleted = 0), independently of subscription or plan. This rule requires concurrency-safe application enforcement.',
 @level0type = N'Schema', @level0name = 'dbo',
 @level1type = N'Table',  @level1name = 'UserAccounts';
 GO
@@ -554,7 +554,7 @@ GO
 
 EXEC sp_addextendedproperty
 @name = N'Table_Description',
-@value = 'Viewing/personalization identity. PIN is optional and must be stored as a hash when configured. Profile deletion uses soft delete: active profiles have IsDeleted = 0 and DeletedAt = NULL; deleted profiles remain in the database for historical/analytics integrity but cannot be selected or used for new viewing/personalization actions. The maximum number of active Profiles is enforced from the owning account active Subscription Plan.MaxProfiles.',
+@value = 'Viewing/personalization identity. PIN is optional and must be stored as a hash when configured. Profile deletion uses soft delete: active profiles have IsDeleted = 0 and DeletedAt = NULL; deleted profiles remain in the database for historical/analytics integrity but cannot be selected or used for new viewing/personalization actions. Each account may have at most 5 active Profiles (IsDeleted = 0), independently of subscription or plan; soft-deleted Profiles do not count. This rule requires concurrency-safe application enforcement.',
 @level0type = N'Schema', @level0name = 'dbo',
 @level1type = N'Table',  @level1name = 'Profiles';
 GO
@@ -584,7 +584,7 @@ GO
 
 EXEC sp_addextendedproperty
 @name = N'Table_Description',
-@value = 'Subscription plan configuration. MaxProfiles limits active Profiles for an account; MaxConcurrentStreams limits simultaneous active ViewingSessions across all Profiles owned by that account. MaxQuality is reserved for playback-quality enforcement when multi-quality video assets are introduced.',
+@value = 'Subscription plan configuration. Profile limits are independent of the plan. MaxConcurrentStreams limits simultaneous active ViewingSessions across all Profiles owned by that account. MaxQuality is reserved for playback-quality enforcement when multi-quality video assets are introduced.',
 @level0type = N'Schema', @level0name = 'dbo',
 @level1type = N'Table',  @level1name = 'Plans';
 GO
