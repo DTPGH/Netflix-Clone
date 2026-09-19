@@ -1,0 +1,32 @@
+<section class="auth-panel p-4 mb-4" aria-labelledby="profile-form-title">
+    <h2 id="profile-form-title" class="h4">@(Editing ? "Edit profile" : "Add a profile")</h2>
+    <EditForm Model="Model" OnValidSubmit="Submit" FormName="profile-editor">
+        <DataAnnotationsValidator />
+        <fieldset disabled="@Disabled">
+            <div class="mb-3">
+                <label class="form-label" for="profile-name">Profile name</label>
+                <InputText id="profile-name" class="form-control" @bind-Value="Model.Name" autocomplete="off" />
+                <ValidationMessage For="() => Model.Name" />
+                <div class="form-text">Use a name everyone can recognize. Up to 100 characters.</div>
+            </div>
+            <div class="form-check mb-2">
+                <InputCheckbox id="profile-kids" class="form-check-input" @bind-Value="Model.IsKids" />
+                <label class="form-check-label" for="profile-kids">Kids profile</label>
+            </div>
+            <p class="form-text mb-4">Kids profiles use maturity level 13. Other profiles use level 18. PIN protection
+                is not available yet.</p>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="submit" class="btn btn-danger">@(Busy ? "Saving…" : Editing ? "Save changes" : "Create profile")</button>
+                </div>
+            </fieldset>
+            <button type="button" class="btn btn-outline-light mt-2" disabled="@Busy" @onclick="Cancel">Cancel</button>
+        </EditForm>
+    </section>
+@code {
+    [Parameter, EditorRequired] public ProfileFormModel Model { get; set; } = new();
+    [Parameter] public bool Editing { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback Submit { get; set; }
+    [Parameter] public EventCallback Cancel { get; set; }
+}

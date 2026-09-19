@@ -12,6 +12,7 @@
                 <AuthorizeView>
                     <Authorized>
                         <NavLink class="nav-link" href="/">My account</NavLink>
+                        <NavLink class="nav-link" href="/profiles">Profiles</NavLink>
                         <button class="btn btn-outline-light" disabled="@Session.IsLoggingOut" @onclick="Logout">@(Session.IsLoggingOut ? "Signing out…" : "Sign out")</button>
                     </Authorized>
                     <NotAuthorized>
