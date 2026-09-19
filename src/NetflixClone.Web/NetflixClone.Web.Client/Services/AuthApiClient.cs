@@ -46,7 +46,7 @@ public sealed class AuthApiClient(HttpClient http)
                     _ when response.StatusCode == System.Net.HttpStatusCode.Unauthorized => "Please sign in again.",
                     _ => "The request could not be completed. Check the form and try again."
                 };
-                return new(default, message, (int)response.StatusCode);
+                return new(default, message, (int)response.StatusCode, code);
             }
             if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
                 return new(default, null, (int)response.StatusCode);

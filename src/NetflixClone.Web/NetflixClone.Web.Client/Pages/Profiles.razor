@@ -1,0 +1,238 @@
+@page "/profiles"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@using System.Security.Claims
+@inject AuthSession Session
+@inject ProfilesApiClient Api
+
+<PageTitle>Manage profiles · Netflix Clone</PageTitle>
+<AuthShell>
+    <div class="profiles-content mx-auto">
+        <p class="eyebrow">MAKE IT YOURS</p>
+        <h1 class="display-5 fw-bold">Manage profiles</h1>
+        <p class="text-muted mb-4">A familiar space for everyone. Create up to 5 profiles for your account.</p>
+        @if (!ready)
+        {
+            <p role="status">Loading your session…</p>
+        }
+        else if (!Session.IsAuthenticated || accountId is null)
+        {
+            <section class="auth-panel p-4">
+                <h2 class="h4">Sign in to manage your profiles</h2>
+                <p class="text-muted">Your profiles will be here when you sign back in.</p>
+                <NavLink href="/login" class="btn btn-danger">Sign in</NavLink>
+            </section>
+        }
+        else
+        {
+            @if (error is not null)
+            {
+                <div class="alert alert-danger" role="alert">@error</div>
+            }
+            @if (notice is not null)
+            {
+                <div class="alert alert-success" role="status">@notice</div>
+            }
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+                <span class="text-muted">@(loaded ? $"{profiles.Count} / 5 profiles" : "Your profiles")</span>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-outline-light" disabled="@(busy || loading)" @onclick="Reload">@(loading ? "Loading…" : "Reload list")</button>
+                    <button class="btn btn-danger" disabled="@(busy || loading || !loaded || profiles.Count >= 5 || form is not null || needsReload)" @onclick="Add">Add profile</button>
+                </div>
+            </div>
+            @if (loaded && profiles.Count >= 5)
+            {
+                <p class="text-muted">All 5 spaces are in use. You can edit a profile or delete one to make room.</p>
+            }
+            @if (form is not null)
+            {
+                <ProfileForm @key="form" Model="form" Editing="@(editingId is not null)" Busy="busy"
+                    Disabled="@(busy || loading || needsReload)" Submit="Save" Cancel="CloseEditor" />
+            }
+            @if (loading)
+            {
+                <p role="status"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading profiles…</p>
+            }
+            else if (loaded && profiles.Count == 0 && form is null)
+            {
+                <section class="auth-panel p-4 p-md-5 text-center">
+                    <h2 class="h3">Start with your first profile</h2>
+                    <p class="text-muted">Give it your name, or a name that feels like you.</p>
+                    <button class="btn btn-danger" disabled="@(busy || needsReload)" @onclick="Add">Create a profile</button>
+                </section>
+            }
+            @if (loaded)
+            {
+                <div class="row g-3">
+                    @foreach (var profile in profiles)
+                    {
+                        <div class="col-12 col-md-6" @key="profile.ProfileId">
+                            <article class="auth-panel p-4 h-100">
+                                <div class="d-flex align-items-center gap-3 mb-3">
+                                    <div class="profile-avatar" aria-hidden="true">@(profile.IsKids ? "☺" : "●")</div>
+                                    <div class="min-width-0">
+                                        <h2 class="h4 text-break mb-1">@profile.Name</h2>
+                                        <span class="text-muted">@(profile.IsKids ? "Kids profile" : "Standard profile")</span>
+                                    </div>
+                                </div>
+                                @if (deleteId == profile.ProfileId)
+                                {
+                                    <div class="border-top pt-3">
+                                        <p>Delete <strong class="text-break">@profile.Name</strong>? It will be removed from your profile list.</p>
+                                        <div class="d-flex flex-wrap gap-2">
+                                            <button class="btn btn-danger" disabled="@(busy || loading || needsReload)" @onclick="() => Delete(profile.ProfileId)">@(busy ? "Deleting…" : "Confirm delete")</button>
+                                            <button class="btn btn-outline-light" disabled="@busy" @onclick="() => deleteId = null">Cancel</button>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <button class="btn btn-outline-light" disabled="@(busy || loading || form is not null || needsReload)" aria-label="@($"Edit profile {profile.Name}")" @onclick="() => Edit(profile)">Edit</button>
+                                        <button class="btn btn-outline-light" disabled="@(busy || loading || form is not null || needsReload)" aria-label="@($"Delete profile {profile.Name}")" @onclick="() => ConfirmDelete(profile.ProfileId)">Delete</button>
+                                    </div>
+                                }
+                            </article>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+</AuthShell>
+
+@code {
+    private List<ProfileReply> profiles = [];
+    private ProfileFormModel? form;
+    private int? editingId, deleteId;
+    private string? accountId, error, notice;
+    private bool ready, loaded, loading, busy, needsReload, disposed;
+    private long generation;
+    private CancellationTokenSource requests = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += SessionChanged;
+        await Session.InitializeAsync();
+        if (disposed) return;
+        ready = true;
+        await SynchronizeAccount();
+    }
+
+    private void SessionChanged() => _ = InvokeAsync(async () =>
+    {
+        if (ready && !disposed) { await SynchronizeAccount(); StateHasChanged(); }
+    });
+
+    private async Task SynchronizeAccount()
+    {
+        var state = await Session.GetAuthenticationStateAsync();
+        if (disposed) return;
+        var current = state.User.Identity?.IsAuthenticated == true
+            ? state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value : null;
+        if (current == accountId) return; // Routine token renewal must not reset a draft.
+        accountId = current;
+        generation++;
+        requests.Cancel(); requests.Dispose(); requests = new();
+        profiles = []; form = null; editingId = deleteId = null;
+        loaded = loading = busy = needsReload = false; error = notice = null;
+        if (current is not null) await Load();
+    }
+
+    private bool IsCurrent(long version) => !disposed && version == generation && Session.IsAuthenticated;
+
+    private async Task Load()
+    {
+        if (accountId is null || loading) return;
+        var version = generation;
+        loading = true;
+        try
+        {
+            var reply = await Api.ListAsync(requests.Token);
+            if (!IsCurrent(version)) return;
+            if (!reply.Success) { error = reply.Error; return; }
+            profiles = reply.Value!.Profiles;
+            loaded = true;
+            needsReload = false;
+        }
+        finally { if (!disposed && version == generation) loading = false; }
+    }
+
+    private async Task Reload()
+    {
+        error = notice = null;
+        var hadDraft = form is not null;
+        await Load();
+        if (!disposed && Session.IsAuthenticated && error is null && hadDraft)
+        {
+            // Keep the draft for comparison, but require reopening before writing stale data.
+            needsReload = true;
+            notice = "The list is up to date. Your draft is still shown. Cancel it and reopen Edit (or Add profile) after reviewing the list.";
+        }
+    }
+
+    private void Add() { form = new(); editingId = deleteId = null; error = notice = null; }
+    private void Edit(ProfileReply profile)
+    {
+        form = new() { Name = profile.Name, IsKids = profile.IsKids };
+        editingId = profile.ProfileId; deleteId = null; error = notice = null;
+    }
+    private void ConfirmDelete(int id) { deleteId = id; error = notice = null; }
+    private void CloseEditor() { form = null; editingId = null; needsReload = !loaded || error is not null; notice = null; }
+
+    private async Task Save()
+    {
+        if (busy || needsReload || form is null) return;
+        var version = generation;
+        var id = editingId;
+        var payload = new ProfilePayload(form.Name.Trim(), form.IsKids);
+        busy = true; error = notice = null;
+        try
+        {
+            var reply = id is null ? await Api.CreateAsync(payload, requests.Token)
+                : await Api.UpdateAsync(id.Value, payload, requests.Token);
+            if (!IsCurrent(version)) return;
+            if (!reply.Success) { await MutationFailed(reply.Error, reply.Code, reply.Status); return; }
+            var updated = reply.Value!;
+            profiles.RemoveAll(p => p.ProfileId == updated.ProfileId);
+            profiles.Add(updated); profiles = profiles.OrderBy(p => p.ProfileId).ToList();
+            form = null; editingId = null;
+            notice = id is null ? "Profile created." : "Profile updated.";
+        }
+        finally { if (!disposed && version == generation) busy = false; }
+    }
+
+    private async Task Delete(int id)
+    {
+        if (busy || needsReload) return;
+        var version = generation;
+        busy = true; error = notice = null;
+        try
+        {
+            var reply = await Api.DeleteAsync(id, requests.Token);
+            if (!IsCurrent(version)) return;
+            if (!reply.Success) { await MutationFailed(reply.Error, reply.Code, reply.Status); return; }
+            profiles.RemoveAll(p => p.ProfileId == id); deleteId = null;
+            notice = "Profile deleted.";
+        }
+        finally { if (!disposed && version == generation) busy = false; }
+    }
+
+    private async Task MutationFailed(string? message, string? code, int status)
+    {
+        error = message;
+        needsReload = status == 0 || status >= 500 || status == 409 || status == 404;
+        if (code is "Profiles.LimitReached" or "Profiles.NotFound")
+        {
+            await Load();
+            needsReload = true;
+        }
+    }
+
+    public void Dispose()
+    {
+        disposed = true; generation++;
+        Session.Changed -= SessionChanged;
+        requests.Cancel(); requests.Dispose();
+    }
+}

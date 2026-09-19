@@ -34,7 +34,7 @@ public sealed record TokenPayload(string RefreshToken);
 public sealed record TokenReply(string AccessToken, DateTime ExpiresAtUtc, string RefreshToken, DateTime RefreshTokenExpiresAtUtc);
 public sealed record MeReply(string UserAccountId, string[] Roles);
 public sealed record StoredCredential(string RefreshToken, DateTime RefreshTokenExpiresAtUtc);
-public sealed record ApiResult<T>(T? Value, string? Error, int Status)
+public sealed record ApiResult<T>(T? Value, string? Error, int Status, string? Code = null)
 {
     public bool Success => Error is null;
 }
