@@ -1,0 +1,223 @@
+@page "/devices"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@using System.Security.Claims
+@inject AuthSession Session
+@inject DevicesApiClient Api
+
+<PageTitle>Manage devices · Netflix Clone</PageTitle>
+<AuthShell>
+    <p class="eyebrow">YOUR ACCOUNT</p>
+    <h1 class="display-5 fw-bold">Manage devices</h1>
+    <p class="text-muted mb-4">Review devices used to sign in to your account. Sign out any device you no longer use.</p>
+    @if (!ready)
+    {
+        <p role="status">Checking your session…</p>
+    }
+    else if (!Session.IsAuthenticated || accountId is null)
+    {
+        <section class="auth-panel p-4">
+            <h2 class="h4">Sign in to manage your devices</h2>
+            <p class="text-muted">Your device list is available after you sign in.</p>
+            <NavLink href="/login" class="btn btn-danger">Sign in</NavLink>
+        </section>
+    }
+    else
+    {
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+            <p class="mb-0 text-muted">Last activity includes automatic session renewal. It does not mean someone is online.</p>
+            <button class="btn btn-outline-light" disabled="@(busy || loading)" @onclick="Reload">@(loading ? "Loading…" : "Reload list")</button>
+        </div>
+        @if (error is not null)
+        {
+            <div class="alert alert-danger" role="alert">@error</div>
+        }
+        @if (notice is not null)
+        {
+            <div class="alert alert-success" role="status">@notice</div>
+        }
+        @if (loading)
+        {
+            <p role="status"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading devices…</p>
+        }
+        @if (loaded && devices.Count == 0)
+        {
+            <section class="auth-panel p-4 text-center">
+                <h2 class="h4">No devices to show</h2>
+                <p class="text-muted mb-0">Devices appear here after a successful sign-in.</p>
+            </section>
+        }
+        else if (loaded)
+        {
+            <ul class="list-unstyled mb-0" aria-label="Devices">
+                @foreach (var device in devices)
+                {
+                    var revoked = device.RevokedAtUtc.HasValue || confirmedRevoked.Contains(device.DeviceId);
+                    <li class="auth-panel p-3 p-md-4 mb-3" @key="device.DeviceId">
+                        <div class="row align-items-center g-3">
+                            <div class="col-12 col-md-4">
+                                <h2 class="h5 text-break mb-1">@device.DeviceName</h2>
+                                <span class="text-muted text-break">@device.DeviceType</span>
+                            </div>
+                            <div class="col-12 col-sm-7 col-md-5">
+                                <dl class="mb-0">
+                                    <dt class="fw-normal text-muted">Last activity</dt>
+                                    <dd class="mb-1"><time datetime="@device.LastActiveAtUtc.ToString("O")">@FormatTime(device.LastActiveAtUtc)</time></dd>
+                                    @if (device.RevokedAtUtc is { } revokedAt)
+                                    {
+                                        <dt class="fw-normal text-muted">Revoked</dt>
+                                        <dd class="mb-0"><time datetime="@revokedAt.ToString("O")">@FormatTime(revokedAt)</time></dd>
+                                    }
+                                </dl>
+                            </div>
+                            <div class="col-12 col-sm-5 col-md-3 d-flex justify-content-sm-end">
+                                @if (revoked)
+                                {
+                                    <span class="badge text-bg-secondary p-2">Session access revoked</span>
+                                }
+                                else if (confirmId != device.DeviceId)
+                                {
+                                    <button class="btn btn-outline-light" disabled="@(busy || loading || needsReload)"
+                                        aria-label="@($"Sign out device {device.DeviceName}")" @onclick="() => Confirm(device.DeviceId)">Sign out device</button>
+                                }
+                            </div>
+                        </div>
+                        @if (!revoked && confirmId == device.DeviceId)
+                        {
+                            <section class="border-top mt-3 pt-3" aria-label="Confirm device sign-out">
+                                <p class="mb-2">Sign out <strong class="text-break">@device.DeviceName</strong>?</p>
+                                <p class="text-muted">This stops all sessions on this device from renewing. Current access may continue briefly until it expires. Someone with your password can sign in again.</p>
+                                <div class="d-flex flex-wrap gap-2">
+                                    <button class="btn btn-danger" disabled="@(busy || loading || needsReload)" @onclick="() => Revoke(device.DeviceId)">@(busy ? "Signing out…" : "Confirm sign out")</button>
+                                    <button class="btn btn-outline-light" disabled="@busy" @onclick="() => confirmId = null">Cancel</button>
+                                </div>
+                            </section>
+                        }
+                    </li>
+                }
+            </ul>
+            <p class="small text-muted mt-3">Times are shown in your local time zone. Revoked devices remain listed for your reference.</p>
+        }
+    }
+</AuthShell>
+
+@code {
+    private List<DeviceReply> devices = [];
+    // A 204 proves revocation, but supplies no timestamp. Keep that fact if the subsequent GET fails.
+    private readonly HashSet<int> confirmedRevoked = [];
+    private string? accountId, error, notice;
+    private int? confirmId;
+    private bool ready, loaded, loading, busy, needsReload, disposed;
+    private long generation;
+    private CancellationTokenSource requests = new();
+
+    private static string FormatTime(DateTimeOffset value) => value.ToLocalTime().ToString("g");
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += SessionChanged;
+        await Session.InitializeAsync();
+        if (disposed) return;
+        ready = true;
+        await SynchronizeAccount();
+    }
+
+    private void SessionChanged() => _ = InvokeAsync(async () =>
+    {
+        if (!ready || disposed) return;
+        await SynchronizeAccount();
+        if (!disposed) StateHasChanged();
+    });
+
+    private async Task SynchronizeAccount()
+    {
+        var state = await Session.GetAuthenticationStateAsync();
+        if (disposed) return;
+        var current = state.User.Identity?.IsAuthenticated == true
+            ? state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value : null;
+        if (current == accountId) return; // Token renewal does not close an open confirmation.
+        accountId = current;
+        generation++;
+        requests.Cancel(); requests.Dispose(); requests = new();
+        devices = []; confirmedRevoked.Clear(); confirmId = null;
+        error = notice = null;
+        loaded = loading = busy = needsReload = false;
+        if (current is not null) await Load();
+    }
+
+    private bool IsCurrent(long version) => !disposed && version == generation && Session.IsAuthenticated;
+
+    private async Task Load()
+    {
+        if (accountId is null || loading) return;
+        var version = generation;
+        loading = true;
+        try
+        {
+            var reply = await Api.ListAsync(requests.Token);
+            if (!IsCurrent(version)) return;
+            if (!reply.Success)
+            {
+                needsReload = true;
+                error = error is null ? reply.Error : error + " The list could not be refreshed. Use Reload list before trying again.";
+                return;
+            }
+            devices = reply.Value!.Devices;
+            loaded = true;
+            needsReload = false;
+            if (confirmId is { } id && !devices.Any(d => d.DeviceId == id && d.RevokedAtUtc is null))
+                confirmId = null;
+        }
+        finally { if (!disposed && version == generation) loading = false; }
+    }
+
+    private async Task Reload()
+    {
+        if (busy || loading) return;
+        confirmId = null;
+        error = notice = null;
+        await Load();
+    }
+
+    private void Confirm(int id)
+    {
+        if (busy || loading || needsReload) return;
+        confirmId = id;
+        error = notice = null;
+    }
+
+    private async Task Revoke(int id)
+    {
+        if (busy || loading || needsReload || confirmId != id) return;
+        var version = generation;
+        busy = true; error = notice = null;
+        try
+        {
+            var reply = await Api.RevokeAsync(id, requests.Token);
+            if (!IsCurrent(version)) return;
+            confirmId = null;
+            if (reply.Success)
+            {
+                confirmedRevoked.Add(id);
+                notice = "Session access for this device has been revoked. Current access may continue briefly until it expires.";
+                await Load();
+            }
+            else
+            {
+                error = reply.Error;
+                needsReload = true;
+                // Refresh the data, never automatically repeat the revoke request.
+                if (reply.Status is 404 or 409) await Load();
+            }
+        }
+        finally { if (!disposed && version == generation) busy = false; }
+    }
+
+    public void Dispose()
+    {
+        disposed = true; generation++;
+        Session.Changed -= SessionChanged;
+        requests.Cancel(); requests.Dispose();
+    }
+}
+

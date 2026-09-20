@@ -8,11 +8,12 @@
     <header class="site-header border-bottom">
         <nav class="container d-flex flex-wrap align-items-center justify-content-between gap-3 py-3" aria-label="Main navigation">
             <NavLink class="brand text-decoration-none" href="/" Match="NavLinkMatch.All">NETFLIX<span class="brand-suffix">CLONE</span></NavLink>
-            <div class="d-flex align-items-center gap-3">
+            <div class="d-flex flex-wrap align-items-center gap-3">
                 <AuthorizeView>
                     <Authorized>
                         <NavLink class="nav-link" href="/">My account</NavLink>
                         <NavLink class="nav-link" href="/profiles">Profiles</NavLink>
+                        <NavLink class="nav-link" href="/devices">Devices</NavLink>
                         <button class="btn btn-outline-light" disabled="@Session.IsLoggingOut" @onclick="Logout">@(Session.IsLoggingOut ? "Signing out…" : "Sign out")</button>
                     </Authorized>
                     <NotAuthorized>
