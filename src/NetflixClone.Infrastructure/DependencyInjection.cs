@@ -7,6 +7,7 @@ using NetflixClone.Application.Common.Abstractions.Time;
 using NetflixClone.Infrastructure.Messaging;
 using NetflixClone.Infrastructure.Persistence;
 using NetflixClone.Infrastructure.Persistence.Repositories;
+using NetflixClone.Infrastructure.Persistence.Queries;
 using NetflixClone.Infrastructure.Security;
 using NetflixClone.Infrastructure.Time;
 
@@ -23,6 +24,8 @@ public static class DependencyInjection
             ServiceProvider.GetRequiredService<NetflixCloneDbContext>());
 
         services.AddScoped<IUserAccountRepository, UserAccountRepository>();
+        services.AddScoped<IMovieCatalogQueries, MovieCatalogQueries>();
+        services.AddScoped<IGenreCatalogQueries, GenreCatalogQueries>();
         services.AddScoped<IRoleRepository, RoleRepository>();
         services.AddScoped<IDeviceRepository, DeviceRepository>();
         services.AddScoped<IProfileRepository, ProfileRepository>();
