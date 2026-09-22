@@ -1,0 +1,63 @@
+@page "/watch/{MovieId:int}"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject CatalogApiClient Api
+@inject AuthSession Session
+<PageTitle>Watch demo · Netflix Clone</PageTitle>
+<AuthShell>
+    <a class="btn btn-outline-light mb-4" href="@($"/movies/{MovieId}")">← Movie details</a>
+    @if (busy) { <p role="status">Preparing your video…</p> }
+    else if (error is not null)
+    {
+        <div class="alert alert-warning" role="alert">@error</div>
+        @if (!Session.IsAuthenticated) { <a class="btn btn-danger" href="/login">Sign in</a> }
+        else { <button class="btn btn-outline-light" @onclick="Load">Try again</button> }
+    }
+    else if (playback is not null && Session.IsAuthenticated)
+    {
+        <h1 class="h2">@playback.Title</h1>
+        <p class="text-muted">Demo video · Blender sample footage, not the selected movie.</p>
+        <video @key="playback" class="demo-player w-100" controls playsinline preload="metadata"
+               src="@playback.VideoUrl" @onerror="VideoFailed" @onwaiting="() => buffering = true" @onplaying="() => buffering = false" @oncanplay="() => buffering = false">
+            Your browser does not support HTML video.
+        </video>
+        @if (buffering) { <p role="status">Buffering video…</p> }
+        @if (videoError) { <div class="alert alert-warning mt-3" role="alert">The video could not be played. Check the demo file and your connection.</div><button class="btn btn-outline-light" @onclick="Load">Reload video</button> }
+        <p class="small text-muted mt-3">Use the player controls to play, seek, adjust volume or enter full screen.</p>
+    }
+</AuthShell>
+@code {
+    [Parameter] public int MovieId { get; set; }
+    private PlaybackReply? playback;
+    private string? error;
+    private bool busy, videoError, buffering;
+    private int version;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override void OnInitialized() => Session.Changed += SessionChanged;
+    protected override Task OnParametersSetAsync() => Load();
+    private async Task Load()
+    {
+        var requestVersion = ++version;
+        busy = true; error = null; playback = null; videoError = false; buffering = false;
+        await Session.InitializeAsync();
+        if (lifetime.IsCancellationRequested || requestVersion != version) return;
+        var result = await Api.PlaybackAsync(MovieId, lifetime.Token);
+        if (lifetime.IsCancellationRequested || requestVersion != version) return;
+        busy = false;
+        if (!Session.IsAuthenticated) { error = "Please sign in to watch this demo."; return; }
+        if (!result.Success) { error = result.Error; return; }
+        if (result.Value is not { } value || !value.IsDemo || value.ContentType != "video/mp4" || !CatalogMedia.IsDemoVideo(value.VideoUrl))
+        { error = "This media format is not supported."; return; }
+        playback = value;
+    }
+    private void VideoFailed() { videoError = true; buffering = false; }
+    private void SessionChanged() => _ = InvokeAsync(() =>
+    {
+        if (Session.Initialized && (!Session.IsAuthenticated || Session.IsLoggingOut))
+        {
+            ++version; playback = null; busy = false; error = "Please sign in to watch this demo.";
+        }
+        StateHasChanged();
+    });
+    public void Dispose() { Session.Changed -= SessionChanged; lifetime.Cancel(); lifetime.Dispose(); }
+}

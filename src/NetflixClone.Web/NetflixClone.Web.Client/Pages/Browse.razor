@@ -1,0 +1,83 @@
+@page "/browse"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject CatalogApiClient Api
+@inject NavigationManager Navigation
+<PageTitle>Browse movies · Netflix Clone</PageTitle>
+<AuthShell>
+    <p class="eyebrow">FIND YOUR NEXT STORY</p>
+    <h1 class="display-5 fw-bold mb-4">Explore movies</h1>
+    <form @onsubmit="Apply" @onsubmit:preventDefault class="auth-panel p-3 p-md-4 mb-4">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-5"><label for="search" class="form-label">Movie title</label><input id="search" class="form-control" maxlength="100" @bind="search" placeholder="Search movies" /></div>
+            <div class="col-sm-6 col-md-3"><label for="genre" class="form-label">Genre</label><select id="genre" class="form-select" @bind="genre"><option value="">All genres</option>@foreach (var g in genres) { <option value="@g.GenreId">@g.Name</option> }</select></div>
+            <div class="col-sm-6 col-md-2"><label for="sort" class="form-label">Sort</label><select id="sort" class="form-select" @bind="sort"><option value="releaseDateDesc">Newest release</option><option value="titleAsc">Title A–Z</option></select></div>
+            <div class="col-md-2"><button class="btn btn-danger w-100" disabled="@busy" type="submit">Search</button></div>
+        </div>
+    </form>
+    @if (genreError is not null) { <p class="text-warning" role="status">@genreError</p> }
+    @if (busy) { <p role="status">Loading movies…</p> }
+    else if (error is not null) { <div class="alert alert-danger" role="alert">@error <button class="btn btn-outline-dark ms-2" @onclick="Load">Try again</button></div> }
+    else if (movies is not null)
+    {
+        <p class="text-muted" role="status">@movies.TotalCount movies found</p>
+        @if (movies.Items.Length == 0) { <div class="auth-panel p-4">No movies match these filters. Try another title or genre.</div> }
+        <div class="row row-cols-2 row-cols-md-3 row-cols-lg-5 g-3 g-md-4">
+            @foreach (var movie in movies.Items)
+            {
+                <div class="col" @key="movie.MovieId">
+                    <a class="movie-card d-block h-100 text-decoration-none" href="@($"/movies/{movie.MovieId}")">
+                        <CatalogImage Src="@movie.ThumbnailUrl" Alt="@($"{movie.Title} poster")" CssClass="movie-poster" />
+                        <div class="p-3"><h2 class="h6 mb-2">@movie.Title</h2><p class="small text-muted mb-0">@movie.ReleaseDate?.Year · @movie.MaturityRating · @(movie.DurationSeconds / 60) min</p>
+                        @if (!movie.IsAvailable) { <span class="small text-muted">Currently unavailable</span> }</div>
+                    </a>
+                </div>
+            }
+        </div>
+        <nav class="d-flex align-items-center justify-content-center gap-3 mt-4" aria-label="Movie pages">
+            <button class="btn btn-outline-light" disabled="@(currentPage <= 1)" @onclick="() => Go(currentPage - 1)">Previous</button>
+            <span>Page @currentPage of @Math.Max(1, (int)Math.Ceiling(movies.TotalCount / 20d))</span>
+            <button class="btn btn-outline-light" disabled="@((long)currentPage * 20 >= movies.TotalCount)" @onclick="() => Go(currentPage + 1)">Next</button>
+        </nav>
+    }
+</AuthShell>
+@code {
+    [SupplyParameterFromQuery(Name = "page")] public int? Page { get; set; }
+    [SupplyParameterFromQuery(Name = "search")] public string? Search { get; set; }
+    [SupplyParameterFromQuery(Name = "genreId")] public int? Genre { get; set; }
+    [SupplyParameterFromQuery(Name = "sort")] public string? Sort { get; set; }
+    private string search = "", sort = "releaseDateDesc";
+    private int? genre;
+    private int currentPage = 1, version;
+    private bool busy;
+    private string? error, genreError;
+    private MoviesReply? movies;
+    private CatalogGenre[] genres = [];
+    private readonly CancellationTokenSource lifetime = new();
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Api.GenresAsync(lifetime.Token);
+        genres = result.Value?.Genres ?? [];
+        genreError = result.Error;
+    }
+    protected override Task OnParametersSetAsync()
+    {
+        search = Search ?? ""; genre = Genre; sort = Sort ?? "releaseDateDesc";
+        currentPage = Page ?? 1;
+        return Load();
+    }
+    private async Task Load()
+    {
+        var requestVersion = ++version;
+        busy = true; error = null;
+        var result = await Api.BrowseAsync(currentPage, Search ?? "", Genre, Sort ?? "releaseDateDesc", lifetime.Token);
+        if (lifetime.IsCancellationRequested || requestVersion != version) return;
+        movies = result.Value; error = result.Error; busy = false;
+    }
+    private void Apply() => Navigate(1, search.Trim(), genre, sort);
+    private void Go(int page) => Navigate(page, Search ?? "", Genre, Sort ?? "releaseDateDesc");
+    private void Navigate(int page, string term, int? selectedGenre, string selectedSort) =>
+        Navigation.NavigateTo($"/browse?page={page}&search={Uri.EscapeDataString(term)}&sort={Uri.EscapeDataString(selectedSort)}" +
+            (selectedGenre.HasValue ? $"&genreId={selectedGenre}" : ""));
+    public void Dispose() { lifetime.Cancel(); lifetime.Dispose(); }
+}
