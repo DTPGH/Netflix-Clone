@@ -1,0 +1,57 @@
+@page "/movies/{MovieId:int}"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject CatalogApiClient Api
+<PageTitle>@(movie?.Title ?? "Movie") · Netflix Clone</PageTitle>
+<AuthShell>
+    <a class="btn btn-outline-light mb-4" href="/browse">← Browse movies</a>
+    @if (busy) { <p role="status">Loading movie…</p> }
+    else if (error is not null) { <div class="alert alert-danger" role="alert">@error</div><button class="btn btn-outline-light" @onclick="Load">Try again</button> }
+    else if (movie is not null)
+    {
+        <CatalogImage Src="@movie.BackdropUrl" Alt="@($"{movie.Title} backdrop")" CssClass="movie-backdrop mb-4" />
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <h1 class="display-5 fw-bold">@movie.Title</h1>
+                <p class="text-muted">@movie.ReleaseDate?.Year · @movie.MaturityRating · @(movie.DurationSeconds / 60) min</p>
+                <div class="d-flex flex-wrap gap-2 mb-3">@foreach (var g in movie.Genres) { <a class="badge text-bg-secondary text-decoration-none p-2" href="@($"/browse?genreId={g.GenreId}")">@g.Name</a> }</div>
+                <p class="lead">@(movie.Description ?? "No description available.")</p>
+                <div class="d-flex flex-wrap gap-3 mb-4">
+                    @if (movie.IsAvailable) { <a class="btn btn-danger" href="@($"/watch/{movie.MovieId}")">Watch demo</a> }
+                    else { <span class="text-muted">Playback currently unavailable.</span> }
+                    @if (trailerId is not null) { <button class="btn btn-outline-light" @onclick="() => showTrailer = !showTrailer">@(showTrailer ? "Close trailer" : "Watch trailer")</button> }
+                </div>
+                @if (trailerId is null) { <p class="text-muted">Trailer unavailable.</p> }
+                @if (showTrailer && trailerId is not null)
+                {
+                    <section aria-label="Movie trailer" class="mb-4">
+                        <div class="ratio ratio-16x9"><iframe @key="trailerId" src="@($"https://www.youtube.com/embed/{trailerId}")" title="@($"{movie.Title} trailer")" allow="encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
+                        <p class="small text-muted mt-2">Trailer not playing? <a href="@($"https://www.youtube.com/watch?v={trailerId}")" target="_blank" rel="noopener noreferrer">Open on YouTube</a></p>
+                    </section>
+                }
+            </div>
+            <aside class="col-lg-4"><div class="auth-panel p-4"><h2 class="h4">Cast &amp; crew</h2>
+                @if (movie.Credits.Length == 0) { <p class="text-muted">Credits unavailable.</p> }
+                <ul class="list-unstyled mb-0">@foreach (var credit in movie.Credits) { <li class="mt-3"><strong>@credit.FullName</strong><div class="small text-muted">@credit.CreditType @if (credit.CharacterName is not null) { <span>· @credit.CharacterName</span> }</div></li> }</ul>
+            </div></aside>
+        </div>
+    }
+</AuthShell>
+@code {
+    [Parameter] public int MovieId { get; set; }
+    private MovieReply? movie;
+    private string? error, trailerId;
+    private bool busy, showTrailer;
+    private int version;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override Task OnParametersSetAsync() => Load();
+    private async Task Load()
+    {
+        var requestVersion = ++version;
+        busy = true; showTrailer = false; movie = null; error = null;
+        var result = await Api.DetailAsync(MovieId, lifetime.Token);
+        if (lifetime.IsCancellationRequested || requestVersion != version) return;
+        movie = result.Value; error = result.Error; trailerId = CatalogMedia.YoutubeId(movie?.TrailerUrl); busy = false;
+    }
+    public void Dispose() { lifetime.Cancel(); lifetime.Dispose(); }
+}

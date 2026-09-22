@@ -1,0 +1,16 @@
+@if (!failed && CatalogMedia.Image(Src) is { } source)
+{
+    <img src="@source" alt="@Alt" class="@CssClass" loading="lazy" @onerror="() => failed = true" />
+}
+else
+{
+    <div class="@CssClass catalog-placeholder" role="img" aria-label="@Alt"><span>Image unavailable</span></div>
+}
+@code {
+    [Parameter] public string? Src { get; set; }
+    [Parameter] public string Alt { get; set; } = "";
+    [Parameter] public string CssClass { get; set; } = "";
+    private string? previous;
+    private bool failed;
+    protected override void OnParametersSet() { if (previous != Src) { previous = Src; failed = false; } }
+}

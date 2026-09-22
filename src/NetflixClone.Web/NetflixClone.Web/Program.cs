@@ -23,6 +23,20 @@ else
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
+// Public demo media: serve byte ranges directly rather than through the
+// development MapStaticAssets runtime handler. No JWT protection is implied.
+var videosDirectory = Path.Combine(app.Environment.WebRootPath, "videos");
+if (Directory.Exists(videosDirectory))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(videosDirectory),
+        RequestPath = "/videos"
+    });
+}
+
+// Select endpoints only after the dedicated media middleware has handled videos.
+app.UseRouting();
 app.UseAntiforgery();
 
 app.MapStaticAssets();

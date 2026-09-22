@@ -12,6 +12,7 @@ builder.Services.AddScoped(_ => new HttpClient { BaseAddress = apiUri, Timeout =
 builder.Services.AddScoped<AuthApiClient>();
 builder.Services.AddScoped<ProfilesApiClient>();
 builder.Services.AddScoped<DevicesApiClient>();
+builder.Services.AddScoped<CatalogApiClient>();
 builder.Services.AddScoped<ICredentialStore, BrowserCredentialStore>();
 builder.Services.AddScoped<AuthSession>();
 builder.Services.AddScoped<AuthenticationStateProvider>(services => services.GetRequiredService<AuthSession>());
