@@ -4,12 +4,14 @@
 @using System.Security.Claims
 @inject AuthSession Session
 @inject ProfilesApiClient Api
+@inject ActiveProfileState ActiveProfile
 
 <PageTitle>Manage profiles · Netflix Clone</PageTitle>
 <AuthShell>
     <div class="profiles-content mx-auto">
         <p class="eyebrow">MAKE IT YOURS</p>
         <h1 class="display-5 fw-bold">Manage profiles</h1>
+        <a class="btn btn-outline-light my-3" href="/select-profile">Choose a profile</a>
         <p class="text-muted mb-4">A familiar space for everyone. Create up to 5 profiles for your account.</p>
         @if (!ready)
         {
@@ -152,6 +154,7 @@
             if (!IsCurrent(version)) return;
             if (!reply.Success) { error = reply.Error; return; }
             profiles = reply.Value!.Profiles;
+            ActiveProfile.Reconcile(profiles);
             loaded = true;
             needsReload = false;
         }
@@ -194,6 +197,7 @@
             if (!IsCurrent(version)) return;
             if (!reply.Success) { await MutationFailed(reply.Error, reply.Code, reply.Status); return; }
             var updated = reply.Value!;
+            ActiveProfile.Update(updated);
             profiles.RemoveAll(p => p.ProfileId == updated.ProfileId);
             profiles.Add(updated); profiles = profiles.OrderBy(p => p.ProfileId).ToList();
             form = null; editingId = null;
@@ -213,6 +217,7 @@
             if (!IsCurrent(version)) return;
             if (!reply.Success) { await MutationFailed(reply.Error, reply.Code, reply.Status); return; }
             profiles.RemoveAll(p => p.ProfileId == id); deleteId = null;
+            if (ActiveProfile.Selected?.ProfileId == id) ActiveProfile.Clear();
             notice = "Profile deleted.";
         }
         finally { if (!disposed && version == generation) busy = false; }

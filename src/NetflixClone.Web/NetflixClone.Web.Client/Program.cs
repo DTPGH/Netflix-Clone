@@ -11,6 +11,8 @@ if (!Uri.TryCreate(apiBaseUrl, UriKind.Absolute, out var apiUri) || apiUri.Schem
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = apiUri, Timeout = TimeSpan.FromSeconds(20) });
 builder.Services.AddScoped<AuthApiClient>();
 builder.Services.AddScoped<ProfilesApiClient>();
+builder.Services.AddScoped<ActiveProfileState>();
+builder.Services.AddScoped<MyListApiClient>();
 builder.Services.AddScoped<DevicesApiClient>();
 builder.Services.AddScoped<CatalogApiClient>();
 builder.Services.AddScoped<ICredentialStore, BrowserCredentialStore>();
