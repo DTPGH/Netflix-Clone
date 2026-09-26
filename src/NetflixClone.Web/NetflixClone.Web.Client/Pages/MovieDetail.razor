@@ -21,6 +21,7 @@
                     else { <span class="text-muted">Playback currently unavailable.</span> }
                     @if (trailerId is not null) { <button class="btn btn-outline-light" @onclick="() => showTrailer = !showTrailer">@(showTrailer ? "Close trailer" : "Watch trailer")</button> }
                 </div>
+                <div class="mb-4"><MyListButton @key="movie.MovieId" MovieId="@movie.MovieId" /></div>
                 @if (trailerId is null) { <p class="text-muted">Trailer unavailable.</p> }
                 @if (showTrailer && trailerId is not null)
                 {

@@ -58,6 +58,9 @@ h1:focus { outline: none; }
 .profiles-content { max-width: 960px; }
 .profile-avatar { width: 64px; height: 64px; flex: 0 0 64px; display: grid; place-items: center; background: var(--app-surface-secondary); border: 1px solid var(--app-border); border-radius: var(--app-radius-md); color: var(--app-accent); font-size: 2rem; }
 .min-width-0 { min-width: 0; }
+.profile-choice { color: var(--app-text); cursor: pointer; }
+.profile-choice:hover, .profile-choice:focus-visible { border-color: var(--app-accent); }
+.profile-choice:disabled { opacity: .65; cursor: wait; }
 .form-select { min-height: 48px; background-color: var(--app-surface-secondary); color: var(--app-text); border-color: var(--app-border); }
 .movie-card { color: var(--app-text); background: var(--app-surface); border: 1px solid var(--app-border); border-radius: var(--app-radius-lg); overflow: hidden; }
 .movie-card:hover { color: var(--app-text); border-color: var(--app-accent); }

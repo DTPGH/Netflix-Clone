@@ -1,6 +1,7 @@
 @implements IDisposable
 @using Microsoft.AspNetCore.Components.Routing
 @inject AuthSession Session
+@inject ActiveProfileState ActiveProfile
 @inject NavigationManager Navigation
 
 <div class="site-frame">
@@ -12,6 +13,8 @@
                 <NavLink class="nav-link" href="/browse">Browse</NavLink>
                 <AuthorizeView>
                     <Authorized>
+                        <NavLink class="nav-link" href="/my-list">My List</NavLink>
+                        <NavLink class="nav-link text-break" href="/select-profile">@(ActiveProfile.Selected is { } selected ? $"Profile: {selected.Name}" : "Choose profile")</NavLink>
                         <NavLink class="nav-link" href="/">My account</NavLink>
                         <NavLink class="nav-link" href="/profiles">Profiles</NavLink>
                         <NavLink class="nav-link" href="/devices">Devices</NavLink>
@@ -50,8 +53,10 @@
     protected override async Task OnInitializedAsync()
     {
         Session.Changed += OnChanged;
+        ActiveProfile.Changed += OnChanged;
         Navigation.LocationChanged += OnLocationChanged;
         await Session.InitializeAsync();
+        await ActiveProfile.InitializeAsync();
     }
     private void OnChanged() => _ = InvokeAsync(StateHasChanged);
     private async Task Logout()
@@ -70,6 +75,7 @@
     public void Dispose()
     {
         Session.Changed -= OnChanged;
+        ActiveProfile.Changed -= OnChanged;
         Navigation.LocationChanged -= OnLocationChanged;
     }
 }
