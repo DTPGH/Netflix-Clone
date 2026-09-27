@@ -1,0 +1,107 @@
+@implements IDisposable
+@inject AuthSession Session
+@inject ActiveProfileState Active
+@inject RatingsApiClient Api
+<section class="border-top pt-3 mb-4" aria-label="Your movie rating">
+    <h2 class="h5">Your rating</h2>
+    @if (!Session.IsAuthenticated)
+    {
+        <a class="btn btn-outline-light" href="/login">Sign in to rate this movie</a>
+    }
+    else if (Active.Selected is null)
+    {
+        <a class="btn btn-outline-light" href="@($"/select-profile?returnTo={Uri.EscapeDataString($"/movies/{MovieId}")}")">Choose a profile to rate</a>
+    }
+    else
+    {
+        <p class="small text-muted">For @Active.Selected.Name</p>
+        @if (error is not null) { <p class="text-warning" role="alert">@error</p> }
+        @if (loading) { <p role="status">Loading your rating…</p> }
+        else if (!known && !busy)
+        {
+            <button class="btn btn-outline-light" @onclick="Load">Reload rating</button>
+        }
+        else
+        {
+            <div class="d-flex flex-wrap gap-2" role="group" aria-label="Choose your rating">
+                @foreach (var option in options)
+                {
+                    <button type="button" class="@(value == option.Value ? "btn btn-danger" : "btn btn-outline-light")"
+                            aria-pressed="@(value == option.Value ? "true" : "false")"
+                            disabled="@(busy || !known)" @onclick="() => Save(option.Value)">@option.Label</button>
+                }
+                @if (value is not null)
+                {
+                    <button type="button" class="btn btn-outline-light" disabled="@busy" @onclick="() => Save(null)">Remove rating</button>
+                }
+            </div>
+            <p class="small mt-2 mb-0" role="status">@(busy ? "Saving rating…" : notice ?? (value is null ? "Not rated yet." : $"Your rating: {Label(value)}."))</p>
+        }
+    }
+</section>
+@code {
+    [Parameter] public int MovieId { get; set; }
+    private static readonly (string Value, string Label)[] options =
+        [("NotForMe", "Not for me"), ("Like", "Like"), ("Love", "Love")];
+    private static string Label(string selected) => options.First(o => o.Value == selected).Label;
+    private bool known, loading, busy, disposed;
+    private string? value, error, notice;
+    private long generation;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override async Task OnInitializedAsync()
+    {
+        Active.Changed += Changed;
+        await Active.InitializeAsync();
+    }
+    protected override Task OnParametersSetAsync() => Load();
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Load(); StateHasChanged(); } });
+    private bool Current(long request, long version) => !disposed && request == generation && version == Active.Version;
+    private async Task Load()
+    {
+        var request = ++generation;
+        var version = Active.Version;
+        var profileId = Active.Selected?.ProfileId;
+        known = loading = busy = false;
+        value = error = notice = null;
+        if (profileId is null || !Session.IsAuthenticated) return;
+        loading = true;
+        var result = await Api.GetAsync(profileId.Value, MovieId, lifetime.Token);
+        if (!Current(request, version)) return;
+        loading = false;
+        if (!result.Success)
+        {
+            error = result.Error;
+            if (result.Code == "Ratings.ProfileNotFound") Active.InvalidateIfCurrent(profileId.Value, version);
+            return;
+        }
+        value = result.Value!.Value;
+        known = true;
+    }
+    private async Task Save(string? desired)
+    {
+        if (busy || !known || value == desired || Active.Selected is not { } profile) return;
+        var request = ++generation;
+        var version = Active.Version;
+        busy = true;
+        error = notice = null;
+        var result = await Api.SetAsync(profile.ProfileId, MovieId, desired, lifetime.Token);
+        if (!Current(request, version)) return;
+        busy = false;
+        if (!result.Success)
+        {
+            known = false;
+            value = null;
+            error = result.Error;
+            if (result.Code == "Ratings.ProfileNotFound") Active.InvalidateIfCurrent(profile.ProfileId, version);
+            return; // A conflict or uncertain response requires a GET, not a write retry.
+        }
+        value = result.Value!.Value;
+        notice = value is null ? "Rating removed." : $"Rating saved: {Label(value)}.";
+    }
+    public void Dispose()
+    {
+        disposed = true; generation++;
+        Active.Changed -= Changed;
+        lifetime.Cancel(); lifetime.Dispose();
+    }
+}

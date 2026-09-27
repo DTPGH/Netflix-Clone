@@ -25,6 +25,19 @@ public partial class NetflixCloneDbContext
                 "The data changed after it was read. The changes could not be saved.", exception);
         }
         catch (DbUpdateException exception) when (
+            exception.InnerException is Microsoft.Data.SqlClient.SqlException ratingSql &&
+            ratingSql.Errors.Cast<Microsoft.Data.SqlClient.SqlError>().Any(error =>
+                error.Number is 2601 or 2627 &&
+                error.Message.Contains("UQ_Ratings_ProfileId_MovieId", StringComparison.Ordinal)) &&
+            exception.Entries.Count == 1 &&
+            exception.Entries[0].Entity is NetflixClone.Domain.Entities.Rating &&
+            exception.Entries[0].State == EntityState.Added &&
+            ChangeTracker.Entries().Count(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted) == 1)
+        {
+            // Competing inserts may express different ratings. Never report silent success.
+            throw new PersistenceConcurrencyException("The rating was created by another request. Reload and try again.", exception);
+        }
+        catch (DbUpdateException exception) when (
             exception.InnerException is Microsoft.Data.SqlClient.SqlException sql &&
             sql.Errors.Cast<Microsoft.Data.SqlClient.SqlError>().Any(error =>
                 error.Number is 2601 or 2627 &&

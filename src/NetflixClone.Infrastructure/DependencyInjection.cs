@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.AddScoped<IDeviceRepository, DeviceRepository>();
         services.AddScoped<IProfileRepository, ProfileRepository>();
         services.AddScoped<IMyListRepository, MyListRepository>();
+        services.AddScoped<IRatingRepository, RatingRepository>();
         services.AddScoped<IProfileCreationScopeFactory, ProfileCreationScopeFactory>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IDeviceIdentifierService, DeviceIdentifierService>();
