@@ -34,7 +34,7 @@ public sealed class MyListApiClient(HttpClient http, AuthSession session)
                 var status = (int)response.StatusCode;
                 return new(default, code switch {
                     "MyList.ProfileNotFound" => "This profile is no longer available. Choose a profile again.",
-                    "MyList.MovieNotFound" => "This movie is no longer available.",
+                    "MyList.MovieNotFound" => "This movie is unavailable for this profile.",
                     "MyList.InvalidPage" => "This page is invalid.",
                     _ when status == 401 => "Please sign in again.",
                     _ => "The request could not be confirmed. Reload before trying again."

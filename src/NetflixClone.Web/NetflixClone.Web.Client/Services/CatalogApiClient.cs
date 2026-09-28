@@ -5,6 +5,10 @@ using NetflixClone.Web.Client.Models;
 namespace NetflixClone.Web.Client.Services;
 public sealed class CatalogApiClient(HttpClient http, AuthSession session)
 {
+    public Task<ApiResult<MoviesReply>> BrowseProfileAsync(int profileId, int page, string search, int? genre, string sort, CancellationToken ct)
+        => session.SendAuthenticatedAsync(token => SendAsync<MoviesReply>(HttpMethod.Get,
+            $"api/profiles/{profileId}/movies?page={page}&pageSize=20&search={Uri.EscapeDataString(search)}&sort={Uri.EscapeDataString(sort)}" +
+            (genre.HasValue ? $"&genreId={genre.Value}" : ""), token, ct), retryUnauthorized: true);
     public Task<ApiResult<MoviesReply>> BrowseAsync(int page, string search, int? genre, string sort, CancellationToken ct)
         => SendAsync<MoviesReply>(HttpMethod.Get, $"api/movies?page={page}&pageSize=20&search={Uri.EscapeDataString(search)}&sort={Uri.EscapeDataString(sort)}" +
             (genre.HasValue ? $"&genreId={genre.Value}" : ""), null, ct);

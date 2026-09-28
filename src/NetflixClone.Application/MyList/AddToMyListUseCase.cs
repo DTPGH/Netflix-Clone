@@ -15,7 +15,7 @@ public sealed class AddToMyListUseCase(IProfileRepository profiles, IMyListRepos
     {
         var profile = await profiles.GetByIdForAccountAsync(command.UserAccountId, command.ProfileId, cancellationToken);
         if (profile is null || profile.IsDeleted) return Result<MyListMutationResult>.Failure(MyListErrors.ProfileNotFound);
-        if (!await items.MovieExistsAsync(command.MovieId, cancellationToken))
+        if (!await items.MovieVisibleToProfileAsync(command.ProfileId, command.MovieId, cancellationToken))
             return Result<MyListMutationResult>.Failure(MyListErrors.MovieNotFound);
         if (await items.GetAsync(command.ProfileId, command.MovieId, cancellationToken) is not null)
             return Result<MyListMutationResult>.Success(new());

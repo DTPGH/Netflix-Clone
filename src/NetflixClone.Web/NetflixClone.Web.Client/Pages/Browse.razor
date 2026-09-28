@@ -3,10 +3,21 @@
 @implements IDisposable
 @inject CatalogApiClient Api
 @inject NavigationManager Navigation
+@inject AuthSession Session
+@inject ActiveProfileState Active
 <PageTitle>Browse movies · Netflix Clone</PageTitle>
 <AuthShell>
+    <Recommendations />
     <p class="eyebrow">FIND YOUR NEXT STORY</p>
     <h1 class="display-5 fw-bold mb-4">Explore movies</h1>
+    @if (Session.Initialized && Session.IsAuthenticated && Active.Selected is null)
+    {
+        <p><a class="btn btn-danger" href="/select-profile?returnTo=%2Fbrowse">Choose a profile to browse</a></p>
+    }
+    else if (Active.Selected is { } profile)
+    {
+        <p class="text-muted">Movies suitable for @profile.Name's age setting.</p>
+    }
     <form @onsubmit="Apply" @onsubmit:preventDefault class="auth-panel p-3 p-md-4 mb-4">
         <div class="row g-3 align-items-end">
             <div class="col-md-5"><label for="search" class="form-label">Movie title</label><input id="search" class="form-control" maxlength="100" @bind="search" placeholder="Search movies" /></div>
@@ -49,17 +60,26 @@
     private string search = "", sort = "releaseDateDesc";
     private int? genre;
     private int currentPage = 1, version;
-    private bool busy;
+    private bool busy, disposed;
     private string? error, genreError;
     private MoviesReply? movies;
     private CatalogGenre[] genres = [];
     private readonly CancellationTokenSource lifetime = new();
     protected override async Task OnInitializedAsync()
     {
+        Active.Changed += ProfileChanged;
+        await Active.InitializeAsync();
         var result = await Api.GenresAsync(lifetime.Token);
         genres = result.Value?.Genres ?? [];
         genreError = result.Error;
     }
+    private void ProfileChanged() => _ = InvokeAsync(async () =>
+    {
+        if (disposed) return;
+        currentPage = 1;
+        await Load();
+        StateHasChanged();
+    });
     protected override Task OnParametersSetAsync()
     {
         search = Search ?? ""; genre = Genre; sort = Sort ?? "releaseDateDesc";
@@ -69,15 +89,31 @@
     private async Task Load()
     {
         var requestVersion = ++version;
-        busy = true; error = null;
-        var result = await Api.BrowseAsync(currentPage, Search ?? "", Genre, Sort ?? "releaseDateDesc", lifetime.Token);
-        if (lifetime.IsCancellationRequested || requestVersion != version) return;
+        var profileVersion = Active.Version;
+        var profileId = Active.Selected?.ProfileId;
+        movies = null; busy = true; error = null;
+        if (Session.IsAuthenticated && profileId is null) { busy = false; return; }
+        var result = profileId is { } id
+            ? await Api.BrowseProfileAsync(id, currentPage, Search ?? "", Genre, Sort ?? "releaseDateDesc", lifetime.Token)
+            : await Api.BrowseAsync(currentPage, Search ?? "", Genre, Sort ?? "releaseDateDesc", lifetime.Token);
+        if (disposed || requestVersion != version || profileVersion != Active.Version) return;
+        if (profileId.HasValue && result.Status == 404)
+        {
+            busy = false;
+            Active.InvalidateIfCurrent(profileId.Value, profileVersion);
+            return;
+        }
         movies = result.Value; error = result.Error; busy = false;
+        if (movies is not null && currentPage > 1 && movies.Items.Length == 0)
+        {
+            currentPage = Math.Max(1, (int)Math.Ceiling(movies.TotalCount / 20d));
+            await Load();
+        }
     }
     private void Apply() => Navigate(1, search.Trim(), genre, sort);
     private void Go(int page) => Navigate(page, Search ?? "", Genre, Sort ?? "releaseDateDesc");
     private void Navigate(int page, string term, int? selectedGenre, string selectedSort) =>
         Navigation.NavigateTo($"/browse?page={page}&search={Uri.EscapeDataString(term)}&sort={Uri.EscapeDataString(selectedSort)}" +
             (selectedGenre.HasValue ? $"&genreId={selectedGenre}" : ""));
-    public void Dispose() { lifetime.Cancel(); lifetime.Dispose(); }
+    public void Dispose() { disposed = true; version++; Active.Changed -= ProfileChanged; lifetime.Cancel(); lifetime.Dispose(); }
 }

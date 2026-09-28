@@ -1,0 +1,172 @@
+@page "/onboarding"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject AuthSession Session
+@inject ActiveProfileState Active
+@inject PersonalizationApiClient Api
+@inject NavigationManager Navigation
+<PageTitle>Find your favorites · Netflix Clone</PageTitle>
+<AuthShell>
+    <div class="mb-4">
+        <p class="eyebrow">MAKE IT YOURS</p>
+        <h1 class="display-5 fw-bold">What do you enjoy watching?</h1>
+        <p class="lead">Choose up to 5 movies you like. We'll use their genres to help you discover something new.</p>
+        <p class="text-muted">You can skip this step. These choices won't change your ratings or My List.</p>
+    </div>
+    @if (!Session.IsAuthenticated && Session.Initialized)
+    {
+        <a class="btn btn-danger" href="/login">Sign in</a>
+    }
+    else if (Active.Selected is null && Session.Initialized)
+    {
+        <a class="btn btn-danger" href="@($"/select-profile?returnTo={Uri.EscapeDataString(ProfileNavigation.Destination(ReturnTo))}")">Choose a profile</a>
+    }
+    else if (loading)
+    {
+        <p role="status">Loading your profile…</p>
+    }
+    else if (completed)
+    {
+        <div class="auth-panel p-4">
+            <h2 class="h4">You're all set, @Active.Selected?.Name</h2>
+            <p>Your initial preferences have already been saved.</p>
+            <a class="btn btn-danger" href="@ProfileNavigation.Destination(ReturnTo)">Continue</a>
+        </div>
+    }
+    else
+    {
+        <p class="text-muted">For @Active.Selected?.Name</p>
+        @if (error is not null) { <div class="alert alert-warning" role="alert">@error</div> }
+        @if (needsReload)
+        {
+            <button class="btn btn-outline-light" @onclick="Reload">Reload onboarding</button>
+        }
+        else
+        {
+            <form class="d-flex gap-2 mb-4" @onsubmit="Search" @onsubmit:preventDefault>
+                <label for="onboarding-search" class="visually-hidden">Search movies</label>
+                <input id="onboarding-search" class="form-control" maxlength="100" placeholder="Search movie titles" @bind="search" disabled="@saving" />
+                <button type="submit" class="btn btn-outline-light" disabled="@(saving || moviesLoading)">Search</button>
+            </form>
+            <div class="auth-panel p-3 mb-4">
+                <p class="mb-2" role="status">@selected.Count of 5 selected</p>
+                @if (selected.Count > 0)
+                {
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        @foreach (var item in selected)
+                        {
+                            <button class="btn btn-outline-light" disabled="@saving" @onclick="() => Toggle(item.Key, item.Value)" aria-label="@($"Remove {item.Value} from selection")">@item.Value ×</button>
+                        }
+                    </div>
+                }
+                <div class="d-flex flex-wrap gap-3">
+                    <button class="btn btn-danger" disabled="@(saving || moviesLoading || selected.Count == 0)" @onclick="() => Complete(false)">@(saving ? "Saving…" : "Continue")</button>
+                    <button class="btn btn-outline-light" disabled="@(saving || moviesLoading)" @onclick="() => Complete(true)">Skip for now</button>
+                </div>
+            </div>
+            @if (moviesLoading) { <p role="status">Loading movies…</p> }
+            else if (movies is not null)
+            {
+                @if (movies.Items.Length == 0) { <p>No movies match. Try another title, or skip this step.</p> }
+                <div class="row row-cols-2 row-cols-md-3 row-cols-lg-5 g-3">
+                    @foreach (var movie in movies.Items)
+                    {
+                        var chosen = selected.ContainsKey(movie.MovieId);
+                        <div class="col" @key="movie.MovieId">
+                            <button type="button" class="@($"movie-card d-block h-100 w-100 p-0 text-start text-light {(chosen ? "border border-danger border-3" : "border border-secondary")}")"
+                                aria-pressed="@(chosen ? "true" : "false")" disabled="@(saving || (!chosen && selected.Count >= 5))"
+                                @onclick="() => Toggle(movie.MovieId, movie.Title)">
+                                <CatalogImage Src="@movie.ThumbnailUrl" Alt="@($"{movie.Title} poster")" CssClass="movie-poster" />
+                                <span class="d-block p-3"><span class="d-block fw-bold">@movie.Title</span><span class="small">@movie.ReleaseDate?.Year · @movie.MaturityRating</span>
+                                    <span class="d-block mt-2">@(chosen ? "✓ Selected" : "Select movie")</span></span>
+                            </button>
+                        </div>
+                    }
+                </div>
+                <nav class="d-flex justify-content-center align-items-center gap-3 my-4" aria-label="Onboarding movie pages">
+                    <button class="btn btn-outline-light" disabled="@(saving || page <= 1)" @onclick="() => Go(page - 1)">Previous</button>
+                    <span>Page @(page)</span>
+                    <button class="btn btn-outline-light" disabled="@(saving || (long)page * 20 >= movies.TotalCount)" @onclick="() => Go(page + 1)">Next</button>
+                </nav>
+            }
+        }
+    }
+</AuthShell>
+@code {
+    [SupplyParameterFromQuery(Name = "returnTo")] public string? ReturnTo { get; set; }
+    private readonly Dictionary<int, string> selected = [];
+    private readonly CancellationTokenSource lifetime = new();
+    private MoviesReply? movies;
+    private string search = "", appliedSearch = "";
+    private string? error;
+    private bool loading = true, moviesLoading, saving, completed, needsReload, disposed;
+    private int page = 1;
+    private long generation;
+    protected override async Task OnInitializedAsync()
+    {
+        Active.Changed += Changed;
+        await Active.InitializeAsync();
+        await Reload();
+    }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Reload(); StateHasChanged(); } });
+    private bool Current(long request, long version) => !disposed && generation == request && Active.Version == version;
+    private async Task Reload()
+    {
+        var request = ++generation; var version = Active.Version; var profile = Active.Selected;
+        selected.Clear(); movies = null; error = null; page = 1; search = appliedSearch = "";
+        loading = true; completed = saving = moviesLoading = needsReload = false;
+        if (profile is null || !Session.IsAuthenticated) { loading = false; return; }
+        var result = await Api.StateAsync(profile.ProfileId, lifetime.Token);
+        if (!Current(request, version)) return;
+        loading = false;
+        if (!result.Success) { Fail(result.Error, result.Code, profile.ProfileId, version); return; }
+        completed = result.Value!.OnboardingCompleted;
+        if (completed)
+        {
+            if (!profile.OnboardingCompleted) Active.Update(profile with { OnboardingCompleted = true });
+            return;
+        }
+        await LoadMovies();
+    }
+    private async Task LoadMovies()
+    {
+        var request = ++generation; var version = Active.Version; var profile = Active.Selected;
+        if (profile is null) return;
+        moviesLoading = true; error = null;
+        var result = await Api.MoviesAsync(profile.ProfileId, page, appliedSearch, lifetime.Token);
+        if (!Current(request, version)) return;
+        moviesLoading = false;
+        if (!result.Success) { Fail(result.Error, result.Code, profile.ProfileId, version); return; }
+        movies = result.Value;
+    }
+    private void Fail(string? message, string? code, int profileId, long version)
+    {
+        error = message; needsReload = true;
+        if (code == "Personalization.ProfileNotFound") Active.InvalidateIfCurrent(profileId, version);
+    }
+    private void Toggle(int id, string title)
+    {
+        if (saving || needsReload) return;
+        if (!selected.Remove(id) && selected.Count < 5) selected.Add(id, title);
+    }
+    private Task Search() { page = 1; appliedSearch = search.Trim(); return LoadMovies(); }
+    private Task Go(int target) { page = target; return LoadMovies(); }
+    private async Task Complete(bool skip)
+    {
+        if (saving || needsReload || moviesLoading || Active.Selected is not { } profile) return;
+        var request = ++generation; var version = Active.Version;
+        saving = true; error = null;
+        var result = await Api.CompleteAsync(profile.ProfileId, skip ? [] : selected.Keys.Order().ToArray(), lifetime.Token);
+        if (!Current(request, version)) return;
+        saving = false;
+        if (!result.Success) { Fail(result.Error, result.Code, profile.ProfileId, version); return; }
+        completed = true;
+        Active.Update(profile with { OnboardingCompleted = true });
+        Navigation.NavigateTo(ProfileNavigation.Destination(ReturnTo));
+    }
+    public void Dispose()
+    {
+        disposed = true; generation++; Active.Changed -= Changed;
+        lifetime.Cancel(); lifetime.Dispose();
+    }
+}

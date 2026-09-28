@@ -73,7 +73,7 @@
         try
         {
             error = await Session.LoginAsync(form);
-            if (error is null) Navigation.NavigateTo("/");
+            if (error is null) Navigation.NavigateTo("/select-profile");
         }
         finally { form.Password = ""; busy = false; }
     }

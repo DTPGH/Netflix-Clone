@@ -16,6 +16,7 @@ public sealed class MovieCatalogQueries(NetflixCloneDbContext dbContext) : IMovi
     public async Task<BrowseMoviesResult> BrowseAsync(MovieCatalogCriteria criteria, CancellationToken cancellationToken = default)
     {
         var query = PublicMovies;
+        if (criteria.MaxAge is { } maxAge) query = query.Where(m => m.MinAge <= maxAge);
         if (criteria.Search is { } search) query = query.Where(m => m.Title.Contains(search));
         if (criteria.GenreId is { } genreId) query = query.Where(m => m.Genres.Any(g => g.Id == genreId));
         var total = await query.CountAsync(cancellationToken);

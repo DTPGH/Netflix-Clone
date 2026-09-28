@@ -1,0 +1,76 @@
+@implements IDisposable
+@inject AuthSession Session
+@inject ActiveProfileState Active
+@inject PersonalizationApiClient Api
+<section class="mb-5" aria-label="Profile recommendations">
+    @if (Session.IsAuthenticated && Active.Selected is { } profile)
+    {
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <h2 class="h3 mb-0">For @profile.Name</h2>
+            <button class="btn btn-outline-light" disabled="@loading" @onclick="Load">Refresh suggestions</button>
+        </div>
+        @if (!profile.OnboardingCompleted) { <p><a href="/onboarding?returnTo=%2Fbrowse">Choose movies you like</a> to help us find your next story.</p> }
+        @if (loading) { <p role="status">Finding movies…</p> }
+        else if (error is not null) { <p class="text-warning" role="alert">@error</p> }
+        else if (result is not null)
+        {
+            <p class="text-muted">@(result.Source switch {
+                "personalized" => "Based on the genres of movies you selected or liked.",
+                "mixed" => "A mix of your favorite genres and other movies to explore.",
+                _ => "Some movies to explore. Your choices and ratings can help personalize this section."
+            })</p>
+            @if (result.Items.Length == 0) { <p>No new suggestions are available for this profile yet.</p> }
+            <div class="row row-cols-2 row-cols-md-3 row-cols-lg-6 g-3">
+                @foreach (var movie in result.Items)
+                {
+                    <div class="col" @key="movie.MovieId">
+                        <a class="movie-card d-block h-100 text-decoration-none" href="@($"/movies/{movie.MovieId}")">
+                            <CatalogImage Src="@movie.ThumbnailUrl" Alt="@($"{movie.Title} poster")" CssClass="movie-poster" />
+                            <div class="p-3"><h3 class="h6">@movie.Title</h3><span class="small text-muted">@movie.ReleaseDate?.Year · @movie.MaturityRating</span></div>
+                        </a>
+                    </div>
+                }
+            </div>
+        }
+    }
+    else if (Session.IsAuthenticated)
+    {
+        <div class="auth-panel p-3"><a href="/select-profile?returnTo=%2Fbrowse">Choose a profile</a> for personal movie suggestions.</div>
+    }
+</section>
+@code {
+    private RecommendationsReply? result;
+    private string? error;
+    private bool loading, disposed;
+    private long generation;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override async Task OnInitializedAsync()
+    {
+        Active.Changed += Changed;
+        await Active.InitializeAsync();
+        await Load();
+    }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Load(); StateHasChanged(); } });
+    private async Task Load()
+    {
+        var request = ++generation; var version = Active.Version; var profile = Active.Selected;
+        result = null; error = null; loading = false;
+        if (profile is null || !Session.IsAuthenticated) return;
+        loading = true;
+        var reply = await Api.RecommendationsAsync(profile.ProfileId, lifetime.Token);
+        if (disposed || request != generation || version != Active.Version) return;
+        loading = false;
+        if (!reply.Success)
+        {
+            error = reply.Error;
+            if (reply.Code == "Personalization.ProfileNotFound") Active.InvalidateIfCurrent(profile.ProfileId, version);
+            return;
+        }
+        result = reply.Value;
+    }
+    public void Dispose()
+    {
+        disposed = true; generation++; Active.Changed -= Changed;
+        lifetime.Cancel(); lifetime.Dispose();
+    }
+}

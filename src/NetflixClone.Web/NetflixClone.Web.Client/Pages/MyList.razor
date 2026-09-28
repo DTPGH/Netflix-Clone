@@ -25,7 +25,7 @@
         @if (loading) { <p role="status">Loading your movies…</p> }
         else if (movies is not null)
         {
-            @if (movies.TotalCount == 0) { <div class="auth-panel p-4"><h2 class="h4">Your list is ready for its first movie.</h2><p>Open a movie and select “+ My List”.</p><a class="btn btn-danger" href="/browse">Explore movies</a></div> }
+            @if (movies.TotalCount == 0) { <div class="auth-panel p-4"><h2 class="h4">No saved movies are visible for this profile.</h2><p>Movies outside this profile's age setting stay saved but are hidden. You can find more movies in Browse.</p><a class="btn btn-danger" href="/browse">Explore movies</a></div> }
             <div class="row row-cols-2 row-cols-md-3 row-cols-lg-5 g-3 g-md-4">
                 @foreach (var movie in movies.Items)
                 {

@@ -31,6 +31,8 @@ public static class DependencyInjection
         services.AddScoped<IProfileRepository, ProfileRepository>();
         services.AddScoped<IMyListRepository, MyListRepository>();
         services.AddScoped<IRatingRepository, RatingRepository>();
+        services.AddScoped<IProfilePreferenceRepository, ProfilePreferenceRepository>();
+        services.AddScoped<IPersonalizationQueries, PersonalizationQueries>();
         services.AddScoped<IProfileCreationScopeFactory, ProfileCreationScopeFactory>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IDeviceIdentifierService, DeviceIdentifierService>();

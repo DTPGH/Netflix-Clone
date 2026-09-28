@@ -8,7 +8,8 @@ public sealed class MyListRepository(NetflixCloneDbContext db) : IMyListReposito
 {
     public async Task<MyListResult> ListAsync(int profileId, int page, int pageSize, CancellationToken cancellationToken = default)
     {
-        var query = db.MyListItems.AsNoTracking().Where(x => x.ProfileId == profileId && !x.Movie.IsDeleted && !x.Profile.IsDeleted);
+        var query = db.MyListItems.AsNoTracking().Where(x => x.ProfileId == profileId && !x.Movie.IsDeleted && !x.Profile.IsDeleted
+            && x.Movie.MinAge <= x.Profile.MaturityLevel);
         var count = await query.CountAsync(cancellationToken);
         var items = await query.OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id)
             .Skip(checked((page - 1) * pageSize)).Take(pageSize)
@@ -17,8 +18,9 @@ public sealed class MyListRepository(NetflixCloneDbContext db) : IMyListReposito
             .ToListAsync(cancellationToken);
         return new(items, page, pageSize, count);
     }
-    public Task<bool> MovieExistsAsync(int movieId, CancellationToken cancellationToken = default)
-        => db.Movies.AsNoTracking().AnyAsync(m => m.Id == movieId && !m.IsDeleted, cancellationToken);
+    public Task<bool> MovieVisibleToProfileAsync(int profileId, int movieId, CancellationToken cancellationToken = default)
+        => db.Movies.AsNoTracking().AnyAsync(m => m.Id == movieId && !m.IsDeleted &&
+            db.Profiles.Any(p => p.Id == profileId && !p.IsDeleted && m.MinAge <= p.MaturityLevel), cancellationToken);
     public Task<MyListItem?> GetAsync(int profileId, int movieId, CancellationToken cancellationToken = default)
         => db.MyListItems.SingleOrDefaultAsync(x => x.ProfileId == profileId && x.MovieId == movieId, cancellationToken);
     public async Task AddAsync(MyListItem item, CancellationToken cancellationToken = default)
