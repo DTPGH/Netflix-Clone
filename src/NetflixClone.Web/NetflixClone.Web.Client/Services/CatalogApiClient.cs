@@ -14,10 +14,18 @@ public sealed class CatalogApiClient(HttpClient http, AuthSession session)
             (genre.HasValue ? $"&genreId={genre.Value}" : ""), null, ct);
     public Task<ApiResult<GenresReply>> GenresAsync(CancellationToken ct)
         => SendAsync<GenresReply>(HttpMethod.Get, "api/genres", null, ct);
-    public Task<ApiResult<MovieReply>> DetailAsync(int id, CancellationToken ct)
-        => SendAsync<MovieReply>(HttpMethod.Get, $"api/movies/{id}", null, ct);
-    public Task<ApiResult<PlaybackReply>> PlaybackAsync(int id, CancellationToken ct)
-        => session.SendAuthenticatedAsync(token => SendAsync<PlaybackReply>(HttpMethod.Post, $"api/movies/{id}/playback", token, ct));
+    public Task<ApiResult<MovieReply>> DetailAsync(int profileId, int id, CancellationToken ct)
+        => session.SendAuthenticatedAsync(token => SendAsync<MovieReply>(HttpMethod.Get, $"api/profiles/{profileId}/movies/{id}", token, ct), retryUnauthorized: true);
+    public Task<ApiResult<PlaybackReply>> PlaybackAsync(int profileId, int id, CancellationToken ct)
+        => session.SendAuthenticatedAsync(token => SendAsync<PlaybackReply>(HttpMethod.Post, $"api/profiles/{profileId}/movies/{id}/playback", token, ct));
+    public string? PlaybackUrl(string value, int movieId)
+    {
+        if (http.BaseAddress is null || !Uri.TryCreate(http.BaseAddress, value, out var uri) ||
+            uri.Scheme != http.BaseAddress.Scheme || uri.Authority != http.BaseAddress.Authority ||
+            uri.AbsolutePath != $"/api/media/{movieId}" || !uri.Query.StartsWith("?ticket=", StringComparison.Ordinal) ||
+            uri.Fragment.Length != 0) return null;
+        return uri.AbsoluteUri;
+    }
     private async Task<ApiResult<T>> SendAsync<T>(HttpMethod method, string path, string? token, CancellationToken ct)
     {
         try
@@ -31,7 +39,7 @@ public sealed class CatalogApiClient(HttpClient http, AuthSession session)
                 return new(default, status switch {
                     401 => "Please sign in to watch this demo.",
                     403 => "You do not have permission to play this video.",
-                    404 => "This movie is no longer available.",
+                    404 => "This movie is unavailable for this profile.",
                     409 => "No playable demo video is available for this movie.",
                     400 => "Check your search and filter values.",
                     _ => "The movie service is unavailable. Please try again."

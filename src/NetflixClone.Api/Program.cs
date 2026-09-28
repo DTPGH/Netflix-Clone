@@ -17,8 +17,20 @@ using NetflixClone.Api.OpenApi;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
+using NetflixClone.Application.Common.Abstractions.Security;
+using NetflixClone.Api.Security;
+using NetflixClone.Api.Media;
 
 var builder = WebApplication.CreateBuilder(args);
+// Hosting request-start logs include query strings. Media tickets must not enter logs.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
+builder.Services.AddDataProtection().SetApplicationName("NetflixClone.Playback");
+builder.Services.AddSingleton<IPlaybackTicketService, PlaybackTicketService>();
+builder.Services.AddSingleton<PrivateDemoMedia>();
+builder.Services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, PlaybackTicketHandler>(
+    PlaybackTicketHandler.SchemeName, _ => { });
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -72,7 +84,7 @@ var webOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<str
 builder.Services.AddCors(options => options.AddPolicy("WebClient", policy =>
 {
     if (webOrigins.Length > 0)
-        policy.WithOrigins(webOrigins).WithMethods("GET", "POST", "PUT", "DELETE").WithHeaders("Content-Type", "Authorization");
+        policy.WithOrigins(webOrigins).WithMethods("GET", "HEAD", "POST", "PUT", "DELETE").WithHeaders("Content-Type", "Authorization", "Range");
 }));
 
 builder.Services.AddScoped<IRegisterAccountUseCase, RegisterAccountUseCase>();
@@ -118,6 +130,8 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var app = builder.Build();
+// Fail early if the configured media directory is a public web root.
+_ = app.Services.GetRequiredService<PrivateDemoMedia>();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

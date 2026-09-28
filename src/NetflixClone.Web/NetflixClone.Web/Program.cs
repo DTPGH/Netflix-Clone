@@ -23,19 +23,18 @@ else
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
-// Public demo media: serve byte ranges directly rather than through the
-// development MapStaticAssets runtime handler. No JWT protection is implied.
-var videosDirectory = Path.Combine(app.Environment.WebRootPath, "videos");
-if (Directory.Exists(videosDirectory))
+// Close legacy media URLs even if an old deployment left static assets behind.
+app.Use(async (context, next) =>
 {
-    app.UseStaticFiles(new StaticFileOptions
+    if (context.Request.Path.StartsWithSegments("/videos"))
     {
-        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(videosDirectory),
-        RequestPath = "/videos"
-    });
-}
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    await next();
+});
 
-// Select endpoints only after the dedicated media middleware has handled videos.
+// Keep legacy video blocking before static asset endpoints.
 app.UseRouting();
 app.UseAntiforgery();
 

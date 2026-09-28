@@ -9,4 +9,4 @@ public sealed record MovieReply(int MovieId, string Title, DateOnly? ReleaseDate
     string? ThumbnailUrl, string MaturityRating, bool IsFeatured, bool IsAvailable,
     string? Description, string? BackdropUrl, string? TrailerUrl, byte MinAge,
     CatalogGenre[] Genres, CatalogCredit[] Credits);
-public sealed record PlaybackReply(int MovieId, string Title, string VideoUrl, string ContentType, bool IsDemo);
+public sealed record PlaybackReply(int MovieId, string Title, string VideoUrl, string ContentType, bool IsDemo, DateTime ExpiresAtUtc);

@@ -8,6 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Remove="wwwroot\videos\**" />
+    <None Remove="wwwroot\videos\**" />
     <ProjectReference Include="..\NetflixClone.Web.Client\NetflixClone.Web.Client.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.10" />
   </ItemGroup>

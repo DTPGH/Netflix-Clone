@@ -10,7 +10,7 @@ public sealed class MovieCatalogQueries(NetflixCloneDbContext dbContext) : IMovi
     private IQueryable<Movie> PublicMovies => dbContext.Movies.AsNoTracking().Where(m => !m.IsDeleted);
     public Task<MoviePlayback?> GetPlaybackAsync(int movieId, CancellationToken cancellationToken = default)
         => PublicMovies.Where(m => m.Id == movieId)
-            .Select(m => new MoviePlayback(m.Id, m.Title, m.IsAvailable, m.VideoUrl))
+            .Select(m => new MoviePlayback(m.Id, m.Title, m.IsAvailable, m.VideoUrl, m.MinAge))
             .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<BrowseMoviesResult> BrowseAsync(MovieCatalogCriteria criteria, CancellationToken cancellationToken = default)

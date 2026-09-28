@@ -1,4 +1,5 @@
 bin/
+private-media/
 obj/
 .vs/
 *.user

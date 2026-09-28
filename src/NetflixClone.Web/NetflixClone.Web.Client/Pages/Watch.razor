@@ -1,63 +1,134 @@
 @page "/watch/{MovieId:int}"
 @rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
-@implements IDisposable
+@implements IAsyncDisposable
 @inject CatalogApiClient Api
 @inject AuthSession Session
+@inject ActiveProfileState Active
+@inject IJSRuntime JS
 <PageTitle>Watch demo · Netflix Clone</PageTitle>
 <AuthShell>
     <a class="btn btn-outline-light mb-4" href="@($"/movies/{MovieId}")">← Movie details</a>
-    @if (busy) { <p role="status">Preparing your video…</p> }
+    @if (Session.Initialized && !Session.IsAuthenticated) { <a class="btn btn-danger" href="/login">Sign in</a> }
+    else if (Session.Initialized && Active.Selected is null) { <a class="btn btn-danger" href="@($"/select-profile?returnTo={Uri.EscapeDataString($"/movies/{MovieId}")}")">Choose a profile</a> }
+    else if (busy) { <p role="status">Preparing your video…</p> }
     else if (error is not null)
     {
         <div class="alert alert-warning" role="alert">@error</div>
-        @if (!Session.IsAuthenticated) { <a class="btn btn-danger" href="/login">Sign in</a> }
-        else { <button class="btn btn-outline-light" @onclick="Load">Try again</button> }
+        <button class="btn btn-outline-light" @onclick="Load">Try again</button>
     }
-    else if (playback is not null && Session.IsAuthenticated)
+    else if (playback is not null)
     {
         <h1 class="h2">@playback.Title</h1>
         <p class="text-muted">Demo video · Blender sample footage, not the selected movie.</p>
-        <video @key="playback" class="demo-player w-100" controls playsinline preload="metadata"
-               src="@playback.VideoUrl" @onerror="VideoFailed" @onwaiting="() => buffering = true" @onplaying="() => buffering = false" @oncanplay="() => buffering = false">
+        <video @ref="player" class="demo-player w-100" controls playsinline preload="metadata" crossorigin="anonymous">
             Your browser does not support HTML video.
         </video>
-        @if (buffering) { <p role="status">Buffering video…</p> }
-        @if (videoError) { <div class="alert alert-warning mt-3" role="alert">The video could not be played. Check the demo file and your connection.</div><button class="btn btn-outline-light" @onclick="Load">Reload video</button> }
-        <p class="small text-muted mt-3">Use the player controls to play, seek, adjust volume or enter full screen.</p>
+        @if (renewing) { <p role="status">Renewing playback access…</p> }
     }
 </AuthShell>
 @code {
     [Parameter] public int MovieId { get; set; }
     private PlaybackReply? playback;
-    private string? error;
-    private bool busy, videoError, buffering;
-    private int version;
+    private string? error, pendingUrl;
+    private bool busy, renewing, disposed;
+    private long version;
+    private readonly string playerId = Guid.NewGuid().ToString("N");
+    private ElementReference player;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<Watch>? self;
     private readonly CancellationTokenSource lifetime = new();
-    protected override void OnInitialized() => Session.Changed += SessionChanged;
-    protected override Task OnParametersSetAsync() => Load();
-    private async Task Load()
+    protected override async Task OnInitializedAsync()
     {
-        var requestVersion = ++version;
-        busy = true; error = null; playback = null; videoError = false; buffering = false;
-        await Session.InitializeAsync();
-        if (lifetime.IsCancellationRequested || requestVersion != version) return;
-        var result = await Api.PlaybackAsync(MovieId, lifetime.Token);
-        if (lifetime.IsCancellationRequested || requestVersion != version) return;
-        busy = false;
-        if (!Session.IsAuthenticated) { error = "Please sign in to watch this demo."; return; }
-        if (!result.Success) { error = result.Error; return; }
-        if (result.Value is not { } value || !value.IsDemo || value.ContentType != "video/mp4" || !CatalogMedia.IsDemoVideo(value.VideoUrl))
-        { error = "This media format is not supported."; return; }
-        playback = value;
+        Active.Changed += Changed;
+        await Active.InitializeAsync();
     }
-    private void VideoFailed() { videoError = true; buffering = false; }
-    private void SessionChanged() => _ = InvokeAsync(() =>
+    protected override Task OnParametersSetAsync() => Load();
+    private void Changed() => _ = InvokeAsync(async () =>
     {
-        if (Session.Initialized && (!Session.IsAuthenticated || Session.IsLoggingOut))
-        {
-            ++version; playback = null; busy = false; error = "Please sign in to watch this demo.";
-        }
+        if (disposed) return;
+        // Never start playback automatically for a different profile.
+        version++; pendingUrl = null; playback = null; busy = renewing = false;
+        error = "Your profile changed. Start playback again.";
+        await Stop();
         StateHasChanged();
     });
-    public void Dispose() { Session.Changed -= SessionChanged; lifetime.Cancel(); lifetime.Dispose(); }
+    private async Task Stop()
+    {
+        if (module is not null)
+        {
+            try { await module.InvokeVoidAsync("stop", player, playerId); }
+            catch (JSException) { }
+        }
+    }
+    private async Task Load()
+    {
+        var request = ++version;
+        await Stop();
+        busy = true; renewing = false; error = null; playback = null; pendingUrl = null;
+        await Active.InitializeAsync();
+        if (disposed || request != version) return;
+        if (!Session.IsAuthenticated || Active.Selected is null) { busy = false; return; }
+        await Issue(request, Active.Version, Active.Selected.ProfileId);
+    }
+    private async Task Issue(long request, long profileVersion, int profileId)
+    {
+        var result = await Api.PlaybackAsync(profileId, MovieId, lifetime.Token);
+        if (disposed || request != version || profileVersion != Active.Version) return;
+        busy = renewing = false;
+        if (!result.Success || result.Value is not { } value || value.MovieId != MovieId ||
+            !value.IsDemo || value.ContentType != "video/mp4" ||
+            value.ExpiresAtUtc <= DateTime.UtcNow || Api.PlaybackUrl(value.VideoUrl, MovieId) is not { } url)
+        {
+            playback = null; pendingUrl = null;
+            error = result.Error ?? "Could not prepare protected playback.";
+            await Stop();
+            return;
+        }
+        playback = value; pendingUrl = url;
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (disposed || pendingUrl is null || playback is null) return;
+        var request = version; var url = pendingUrl; var expires = playback.ExpiresAtUtc;
+        pendingUrl = null;
+        try
+        {
+            module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/demo-player.js");
+            if (disposed || request != version) return;
+            self ??= DotNetObjectReference.Create(this);
+            await module.InvokeVoidAsync("setSource", player, url, expires, self, request, playerId);
+        }
+        catch (JSException)
+        {
+            if (!disposed && request == version)
+            {
+                error = "Could not initialize the video player."; playback = null;
+                await Stop(); StateHasChanged();
+            }
+        }
+    }
+    [JSInvokable]
+    public async Task RenewPlayback(long expectedVersion)
+    {
+        if (disposed || renewing || expectedVersion != version || playback is null ||
+            !Session.IsAuthenticated || Active.Selected is not { } profile) return;
+        renewing = true;
+        await Issue(version, Active.Version, profile.ProfileId);
+        if (!disposed) StateHasChanged();
+    }
+    [JSInvokable]
+    public async Task PlaybackFailed(long expectedVersion)
+    {
+        if (disposed || expectedVersion != version) return;
+        version++; error = "The video could not be played. Check your connection and try again.";
+        playback = null; pendingUrl = null; renewing = busy = false;
+        await Stop(); StateHasChanged();
+    }
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true; version++; Active.Changed -= Changed; lifetime.Cancel();
+        await Stop();
+        if (module is not null) await module.DisposeAsync();
+        self?.Dispose(); lifetime.Dispose();
+    }
 }

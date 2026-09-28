@@ -8,8 +8,16 @@ namespace NetflixClone.Api.Controllers;
 [Authorize]
 [Route("api/profiles/{profileId:int:min(1)}/movies")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class ProfileMoviesController(IBrowseMoviesUseCase browse) : ControllerBase
+public sealed class ProfileMoviesController(IBrowseMoviesUseCase browse, IGetMovieDetailUseCase detail) : ControllerBase
 {
+    [HttpGet("{movieId:int:min(1)}")]
+    public async Task<IActionResult> Detail(int profileId, int movieId, CancellationToken ct)
+    {
+        if (!int.TryParse(User.FindFirst("sub")?.Value, out var accountId) || accountId <= 0) return Unauthorized();
+        var result = await detail.ExecuteAsync(new(accountId, profileId, movieId), ct);
+        return result.IsFailure ? NotFound(new { result.Error!.Code, result.Error.Description })
+            : Ok(MovieDetailResponse.From(result.Value!));
+    }
     [HttpGet]
     public async Task<IActionResult> Browse(int profileId, [FromQuery] BrowseMoviesRequest request, CancellationToken ct)
     {

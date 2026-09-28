@@ -2,10 +2,14 @@
 @rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
 @implements IDisposable
 @inject CatalogApiClient Api
+@inject AuthSession Session
+@inject ActiveProfileState Active
 <PageTitle>@(movie?.Title ?? "Movie") · Netflix Clone</PageTitle>
 <AuthShell>
     <a class="btn btn-outline-light mb-4" href="/browse">← Browse movies</a>
-    @if (busy) { <p role="status">Loading movie…</p> }
+    @if (Session.Initialized && !Session.IsAuthenticated) { <a class="btn btn-danger" href="/login">Sign in to view movie details</a> }
+    else if (Session.Initialized && Active.Selected is null) { <a class="btn btn-danger" href="@($"/select-profile?returnTo={Uri.EscapeDataString($"/movies/{MovieId}")}")">Choose a profile</a> }
+    else if (busy) { <p role="status">Loading movie…</p> }
     else if (error is not null) { <div class="alert alert-danger" role="alert">@error</div><button class="btn btn-outline-light" @onclick="Load">Try again</button> }
     else if (movie is not null)
     {
@@ -46,14 +50,26 @@
     private bool busy, showTrailer;
     private int version;
     private readonly CancellationTokenSource lifetime = new();
+    protected override async Task OnInitializedAsync()
+    {
+        Active.Changed += Changed;
+        await Active.InitializeAsync();
+    }
+    private void Changed() => _ = InvokeAsync(async () =>
+    {
+        if (lifetime.IsCancellationRequested) return;
+        await Load(); StateHasChanged();
+    });
     protected override Task OnParametersSetAsync() => Load();
     private async Task Load()
     {
         var requestVersion = ++version;
         busy = true; showTrailer = false; movie = null; error = null;
-        var result = await Api.DetailAsync(MovieId, lifetime.Token);
-        if (lifetime.IsCancellationRequested || requestVersion != version) return;
+        var profileVersion = Active.Version;
+        if (!Session.IsAuthenticated || Active.Selected is not { } profile) { busy = false; return; }
+        var result = await Api.DetailAsync(profile.ProfileId, MovieId, lifetime.Token);
+        if (lifetime.IsCancellationRequested || requestVersion != version || profileVersion != Active.Version) return;
         movie = result.Value; error = result.Error; trailerId = CatalogMedia.YoutubeId(movie?.TrailerUrl); busy = false;
     }
-    public void Dispose() { lifetime.Cancel(); lifetime.Dispose(); }
+    public void Dispose() { Active.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
 }

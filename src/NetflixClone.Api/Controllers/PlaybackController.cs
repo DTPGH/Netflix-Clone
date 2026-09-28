@@ -3,22 +3,29 @@ using Microsoft.AspNetCore.Mvc;
 using NetflixClone.Api.Contracts.Catalog;
 using NetflixClone.Application.Catalog.Movies;
 using NetflixClone.Application.Common.Results;
+using NetflixClone.Application.Common.Abstractions.Security;
+using NetflixClone.Api.Media;
 namespace NetflixClone.Api.Controllers;
 [ApiController]
 [Authorize]
-[Route("api/movies")]
+[Route("api/profiles/{profileId:int:min(1)}/movies")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class PlaybackController(IGetMoviePlaybackUseCase playback) : ControllerBase
+public sealed class PlaybackController(IGetMoviePlaybackUseCase playback, IPlaybackTicketService tickets, PrivateDemoMedia media) : ControllerBase
 {
     [HttpPost("{movieId:int:min(1)}/playback")]
-    public async Task<IActionResult> Start(int movieId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Start(int profileId, int movieId, CancellationToken cancellationToken)
     {
-        var result = await playback.ExecuteAsync(movieId, cancellationToken);
+        if (!int.TryParse(User.FindFirst("sub")?.Value, out var accountId) || accountId <= 0) return Unauthorized();
+        var result = await playback.ExecuteAsync(new(accountId, profileId, movieId), cancellationToken);
         if (result.IsFailure)
             return result.Error!.Type == ErrorType.NotFound
                 ? NotFound(new { result.Error.Code, result.Error.Description })
                 : Conflict(new { result.Error.Code, result.Error.Description });
         var value = result.Value!;
-        return Ok(new PlaybackResponse(value.MovieId, value.Title, value.VideoUrl, value.ContentType, value.IsDemo));
+        if (media.Resolve(value.MediaKey) is null)
+            return Conflict(new { Code = "Movies.PlaybackUnavailable", Description = "Video is not available." });
+        var ticket = tickets.Issue(accountId, profileId, movieId, value.MediaKey);
+        var url = $"{Request.PathBase}/api/media/{movieId}?ticket={Uri.EscapeDataString(ticket.Token)}";
+        return Ok(new PlaybackResponse(value.MovieId, value.Title, url, value.ContentType, value.IsDemo, ticket.ExpiresAtUtc));
     }
 }

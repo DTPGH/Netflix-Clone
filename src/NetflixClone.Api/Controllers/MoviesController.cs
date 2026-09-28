@@ -7,7 +7,7 @@ namespace NetflixClone.Api.Controllers;
 [ApiController]
 [AllowAnonymous]
 [Route("api/movies")]
-public sealed class MoviesController(IBrowseMoviesUseCase browse, IGetMovieDetailUseCase detail) : ControllerBase
+public sealed class MoviesController(IBrowseMoviesUseCase browse) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Browse([FromQuery] BrowseMoviesRequest request, CancellationToken cancellationToken)
@@ -19,12 +19,4 @@ public sealed class MoviesController(IBrowseMoviesUseCase browse, IGetMovieDetai
             value.Page, value.PageSize, value.TotalCount));
     }
 
-    [HttpGet("{movieId:int}")]
-    public async Task<IActionResult> Detail(int movieId, CancellationToken cancellationToken)
-    {
-        var result = await detail.ExecuteAsync(movieId, cancellationToken);
-        return result.IsFailure
-            ? NotFound(new { result.Error!.Code, result.Error.Description })
-            : Ok(MovieDetailResponse.From(result.Value!));
-    }
 }

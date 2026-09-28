@@ -22,5 +22,4 @@ public static class CatalogMedia
         }
         return id is not null && Regex.IsMatch(id, @"\A[A-Za-z0-9_-]{11}\z") ? id : null;
     }
-    public static bool IsDemoVideo(string url) => Regex.IsMatch(url, @"\A/videos/[A-Za-z0-9_-]+\.mp4\z");
 }
