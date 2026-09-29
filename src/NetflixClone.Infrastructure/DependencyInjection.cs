@@ -29,6 +29,7 @@ public static class DependencyInjection
         services.AddScoped<IRoleRepository, RoleRepository>();
         services.AddScoped<IDeviceRepository, DeviceRepository>();
         services.AddScoped<IProfileRepository, ProfileRepository>();
+        services.AddScoped<IWatchHistoryRepository, WatchHistoryRepository>();
         services.AddScoped<IMyListRepository, MyListRepository>();
         services.AddScoped<IRatingRepository, RatingRepository>();
         services.AddScoped<IProfilePreferenceRepository, ProfilePreferenceRepository>();

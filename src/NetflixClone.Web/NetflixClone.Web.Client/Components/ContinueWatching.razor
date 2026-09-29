@@ -1,0 +1,59 @@
+@implements IDisposable
+@inject ActiveProfileState Active
+@inject AuthSession Session
+@inject WatchHistoryApiClient Api
+@if (Session.IsAuthenticated && Active.Selected is { } profile)
+{
+    <section class="mb-5" aria-label="Continue watching">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h2 class="h3 mb-0">Continue watching · @profile.Name</h2>
+            <button class="btn btn-outline-light" disabled="@loading" @onclick="Load">Refresh progress</button>
+        </div>
+        @if (loading) { <p role="status">Loading your progress…</p> }
+        else if (error is not null) { <p class="text-warning" role="alert">@error</p> }
+        else if (items.Length == 0) { <p class="text-muted">Movies you start will appear here so you can pick up where you left off.</p> }
+        else
+        {
+            <div class="row row-cols-2 row-cols-md-3 row-cols-lg-6 g-3">
+                @foreach (var item in items)
+                {
+                    <div class="col" @key="item.Movie.MovieId">
+                        <a class="movie-card d-block h-100 text-decoration-none" href="@($"/watch/{item.Movie.MovieId}")">
+                            <CatalogImage Src="@item.Movie.ThumbnailUrl" Alt="@($"{item.Movie.Title} poster")" CssClass="movie-poster" />
+                            <div class="p-3"><h3 class="h6">@item.Movie.Title</h3>
+                                <span class="small text-muted">Resume demo at @Position(item.PositionSeconds)</span></div>
+                        </a>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+}
+@code {
+    private ContinueWatchingCard[] items = [];
+    private string? error;
+    private bool loading, disposed;
+    private long generation;
+    private readonly CancellationTokenSource lifetime = new();
+    private static string Position(int seconds) => TimeSpan.FromSeconds(seconds).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
+    protected override async Task OnInitializedAsync()
+    {
+        Active.Changed += Changed;
+        await Active.InitializeAsync();
+        await Load();
+    }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Load(); StateHasChanged(); } });
+    private async Task Load()
+    {
+        var request = ++generation; var version = Active.Version; var profile = Active.Selected;
+        items = []; error = null; loading = false;
+        if (!Session.IsAuthenticated || profile is null) return;
+        loading = true;
+        var result = await Api.ContinueAsync(profile.ProfileId, lifetime.Token);
+        if (disposed || request != generation || version != Active.Version) return;
+        loading = false;
+        if (!result.Success) { error = result.Error; if (result.Status == 404) Active.InvalidateIfCurrent(profile.ProfileId, version); return; }
+        items = result.Value!.Items;
+    }
+    public void Dispose() { disposed = true; generation++; Active.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
+}

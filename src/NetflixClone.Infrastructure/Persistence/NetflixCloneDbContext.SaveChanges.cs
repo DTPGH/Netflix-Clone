@@ -25,6 +25,18 @@ public partial class NetflixCloneDbContext
                 "The data changed after it was read. The changes could not be saved.", exception);
         }
         catch (DbUpdateException exception) when (
+            exception.InnerException is Microsoft.Data.SqlClient.SqlException historySql &&
+            historySql.Errors.Cast<Microsoft.Data.SqlClient.SqlError>().Any(error =>
+                error.Number is 2601 or 2627 &&
+                error.Message.Contains("UQ_WatchHistories_ProfileId_MovieId", StringComparison.Ordinal)) &&
+            exception.Entries.Count == 1 &&
+            exception.Entries[0].Entity is NetflixClone.Domain.Entities.WatchHistory &&
+            exception.Entries[0].State == EntityState.Added &&
+            ChangeTracker.Entries().Count(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted) == 1)
+        {
+            throw new PersistenceConcurrencyException("Watch progress was created by another request. Reload playback.", exception);
+        }
+        catch (DbUpdateException exception) when (
             exception.InnerException is Microsoft.Data.SqlClient.SqlException preferenceSql &&
             preferenceSql.Errors.Cast<Microsoft.Data.SqlClient.SqlError>().Any(error =>
                 error.Number is 2601 or 2627 &&

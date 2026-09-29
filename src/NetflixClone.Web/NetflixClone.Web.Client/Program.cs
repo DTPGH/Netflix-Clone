@@ -15,6 +15,7 @@ builder.Services.AddScoped<ActiveProfileState>();
 builder.Services.AddScoped<MyListApiClient>();
 builder.Services.AddScoped<RatingsApiClient>();
 builder.Services.AddScoped<PersonalizationApiClient>();
+builder.Services.AddScoped<WatchHistoryApiClient>();
 builder.Services.AddScoped<DevicesApiClient>();
 builder.Services.AddScoped<CatalogApiClient>();
 builder.Services.AddScoped<ICredentialStore, BrowserCredentialStore>();
