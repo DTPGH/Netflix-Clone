@@ -5,7 +5,9 @@
 @inject AuthSession Session
 @inject ActiveProfileState Active
 @inject IJSRuntime JS
+@inject WatchHistoryApiClient History
 <PageTitle>Watch demo · Netflix Clone</PageTitle>
+<NavigationLock OnBeforeInternalNavigation="BeforeNavigate" />
 <AuthShell>
     <a class="btn btn-outline-light mb-4" href="@($"/movies/{MovieId}")">← Movie details</a>
     @if (Session.Initialized && !Session.IsAuthenticated) { <a class="btn btn-danger" href="/login">Sign in</a> }
@@ -20,6 +22,13 @@
     {
         <h1 class="h2">@playback.Title</h1>
         <p class="text-muted">Demo video · Blender sample footage, not the selected movie.</p>
+        @if (progressError is not null)
+        {
+            <div class="alert alert-warning" role="alert">@progressError
+                <button class="btn btn-outline-dark ms-2" @onclick="Load">Reload saved progress</button>
+            </div>
+        }
+        else if (progressReady) { <p class="small text-muted" role="status">@(progressCompleted ? "Demo completed." : "Progress saves automatically while watching and when paused.")</p> }
         <video @ref="player" class="demo-player w-100" controls playsinline preload="metadata" crossorigin="anonymous">
             Your browser does not support HTML video.
         </video>
@@ -32,6 +41,12 @@
     private string? error, pendingUrl;
     private bool busy, renewing, disposed;
     private long version;
+    private long progressProfileVersion;
+    private int progressProfileId, progressMovieId, resumeSeconds;
+    private DateTime? progressStamp;
+    private bool progressReady, progressCompleted;
+    private string? progressError;
+    private readonly SemaphoreSlim progressGate = new(1, 1);
     private readonly string playerId = Guid.NewGuid().ToString("N");
     private ElementReference player;
     private IJSObjectReference? module;
@@ -48,6 +63,7 @@
         if (disposed) return;
         // Never start playback automatically for a different profile.
         version++; pendingUrl = null; playback = null; busy = renewing = false;
+        progressReady = false;
         error = "Your profile changed. Start playback again.";
         await Stop();
         StateHasChanged();
@@ -60,14 +76,33 @@
             catch (JSException) { }
         }
     }
+    private async Task BeforeNavigate(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context)
+    {
+        if (module is null || disposed || !progressReady) return;
+        try { await module.InvokeVoidAsync("flush", playerId); }
+        catch (JSException) { }
+    }
     private async Task Load()
     {
         var request = ++version;
         await Stop();
         busy = true; renewing = false; error = null; playback = null; pendingUrl = null;
+        progressReady = false; progressError = null; resumeSeconds = 0; progressStamp = null; progressCompleted = false;
         await Active.InitializeAsync();
         if (disposed || request != version) return;
         if (!Session.IsAuthenticated || Active.Selected is null) { busy = false; return; }
+        progressProfileVersion = Active.Version;
+        progressProfileId = Active.Selected.ProfileId;
+        progressMovieId = MovieId;
+        var saved = await History.GetAsync(progressProfileId, progressMovieId, lifetime.Token);
+        if (disposed || request != version || progressProfileVersion != Active.Version) return;
+        if (saved.Success)
+        {
+            progressReady = true; progressStamp = saved.Value!.UpdatedAtUtc;
+            progressCompleted = saved.Value.IsCompleted;
+            resumeSeconds = saved.Value.IsCompleted ? 0 : saved.Value.PositionSeconds;
+        }
+        else progressError = saved.Error; // Never overwrite unknown progress after a failed GET.
         await Issue(request, Active.Version, Active.Selected.ProfileId);
     }
     private async Task Issue(long request, long profileVersion, int profileId)
@@ -96,7 +131,7 @@
             module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/demo-player.js");
             if (disposed || request != version) return;
             self ??= DotNetObjectReference.Create(this);
-            await module.InvokeVoidAsync("setSource", player, url, expires, self, request, playerId);
+            await module.InvokeVoidAsync("setSource", player, url, expires, self, request, playerId, resumeSeconds);
         }
         catch (JSException)
         {
@@ -106,6 +141,28 @@
                 await Stop(); StateHasChanged();
             }
         }
+    }
+    [JSInvokable]
+    public async Task ReportProgress(long expectedVersion, int position, int duration, bool ended)
+    {
+        if (disposed || !progressReady || expectedVersion != version) return;
+        try { await progressGate.WaitAsync(lifetime.Token); }
+        catch (OperationCanceledException) { return; }
+        try
+        {
+            if (disposed || !progressReady || expectedVersion != version || progressProfileVersion != Active.Version ||
+                !Session.IsAuthenticated || Active.Selected?.ProfileId != progressProfileId) return;
+            var result = await History.SaveAsync(progressProfileId, progressMovieId, position, duration, ended, progressStamp, lifetime.Token);
+            if (disposed || expectedVersion != version || progressProfileVersion != Active.Version) return;
+            if (result.Success)
+            {
+                progressStamp = result.Value!.UpdatedAtUtc;
+                progressCompleted = result.Value.IsCompleted;
+            }
+            else { progressReady = false; progressError = result.Error; }
+            StateHasChanged();
+        }
+        finally { progressGate.Release(); }
     }
     [JSInvokable]
     public async Task RenewPlayback(long expectedVersion)
