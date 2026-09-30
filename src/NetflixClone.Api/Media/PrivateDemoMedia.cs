@@ -3,6 +3,7 @@ namespace NetflixClone.Api.Media;
 public sealed class PrivateDemoMedia
 {
     private readonly string root;
+    public string RootPath => root;
     public PrivateDemoMedia(IConfiguration configuration, IWebHostEnvironment environment)
     {
         // Production should set an absolute external media directory explicitly.

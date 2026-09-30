@@ -18,6 +18,8 @@ builder.Services.AddScoped<PersonalizationApiClient>();
 builder.Services.AddScoped<WatchHistoryApiClient>();
 builder.Services.AddScoped<DevicesApiClient>();
 builder.Services.AddScoped<CatalogApiClient>();
+builder.Services.AddScoped<AdminMoviesApiClient>();
+builder.Services.AddScoped(_ => new AdminMediaUploadTransport(apiUri));
 builder.Services.AddScoped<ICredentialStore, BrowserCredentialStore>();
 builder.Services.AddScoped<AuthSession>();
 builder.Services.AddScoped<AuthenticationStateProvider>(services => services.GetRequiredService<AuthSession>());

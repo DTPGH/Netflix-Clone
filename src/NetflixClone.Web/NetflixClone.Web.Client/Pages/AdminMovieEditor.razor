@@ -1,0 +1,120 @@
+@page "/admin/movies/new"
+@page "/admin/movies/{MovieId:int}/edit"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject AuthSession Session
+@inject AdminMoviesApiClient Api
+@inject CatalogApiClient Catalog
+@inject NavigationManager Navigation
+
+<PageTitle>@(MovieId.HasValue ? "Edit movie" : "Add movie") · Netflix Clone</PageTitle>
+<AuthShell>
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div><p class="eyebrow">CONTENT ADMINISTRATION</p>
+            <h1 class="display-5 fw-bold">@(MovieId.HasValue ? "Edit movie" : "Add movie")</h1></div>
+        <a class="btn btn-outline-light" href="/admin/movies">Back to movies</a>
+    </div>
+    @if (!ready || loading) { <p role="status"><span class="spinner-border spinner-border-sm me-2"></span>Loading editor…</p> }
+    else if (!isAdmin)
+    {
+        <section class="auth-panel p-4"><h2 class="h4">Administrator access required</h2>
+            <p class="text-muted mb-0">Sign in with an account that currently has the Admin role.</p></section>
+    }
+    else
+    {
+        @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+        @if (notice is not null) { <div class="alert alert-success" role="status">@notice</div> }
+        @if (needsReload)
+        {
+            <button class="btn btn-outline-light mb-3" disabled="@busy" @onclick="Reload">Reload editor</button>
+        }
+        @if (movie?.IsDeleted == true)
+        {
+            <section class="auth-panel p-4"><h2 class="h4">This movie is soft-deleted</h2>
+                <p class="text-muted">Restore it from the Admin movies list before editing.</p>
+                <a class="btn btn-danger" href="/admin/movies">Open movie list</a></section>
+        }
+        else if (form is not null)
+        {
+            <AdminMovieForm Model="form" Genres="genres" Editing="@MovieId.HasValue" Busy="busy"
+                Disabled="@(busy || needsReload)" Submit="Save" CancellationToken="lifetime.Token" />
+            @if (movie is not null)
+            {
+                <p class="small text-muted mt-3">Created @movie.CreatedAtUtc.ToLocalTime().ToString("g") · Last updated @movie.UpdatedAtUtc.ToLocalTime().ToString("g")</p>
+            }
+        }
+    }
+</AuthShell>
+
+@code {
+    [Parameter] public int? MovieId { get; set; }
+    private AdminMovieFormModel? form;
+    private AdminMovieReply? movie;
+    private CatalogGenre[] genres = [];
+    private string? error, notice;
+    private bool ready, isAdmin, loading, busy, needsReload, disposed;
+    private long generation;
+    private int? loadedRouteMovieId;
+    private readonly CancellationTokenSource lifetime = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += SessionChanged;
+        await Session.InitializeAsync();
+        await SynchronizeAccess();
+    }
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ready && isAdmin && loadedRouteMovieId != MovieId) await Load();
+    }
+    private void SessionChanged() => _ = InvokeAsync(async () => { await SynchronizeAccess(); if (!disposed) StateHasChanged(); });
+    private async Task SynchronizeAccess()
+    {
+        var state = await Session.GetAuthenticationStateAsync();
+        var allowed = state.User.Identity?.IsAuthenticated == true && state.User.IsInRole("Admin");
+        ready = true;
+        if (!allowed) { isAdmin = false; form = null; movie = null; generation++; return; }
+        if (isAdmin && form is not null) return;
+        isAdmin = true;
+        await Load();
+    }
+    private async Task Load()
+    {
+        if (!isAdmin) return;
+        loadedRouteMovieId = MovieId;
+        var request = ++generation; loading = true; error = notice = null; needsReload = false;
+        var genresResult = await Catalog.GenresAsync(lifetime.Token);
+        if (disposed || request != generation) return;
+        if (!genresResult.Success) { error = genresResult.Error; loading = false; needsReload = true; return; }
+        genres = genresResult.Value!.Genres;
+        if (!MovieId.HasValue)
+        {
+            movie = null; form = new(); loading = false; return;
+        }
+        var result = await Api.GetAsync(MovieId.Value, lifetime.Token);
+        if (disposed || request != generation) return;
+        loading = false;
+        if (!result.Success) { error = result.Error; form = null; needsReload = true; return; }
+        movie = result.Value!; form = AdminMovieFormModel.From(movie);
+    }
+    private async Task Reload() { if (!busy) await Load(); }
+    private async Task Save()
+    {
+        if (busy || needsReload || form is null || movie?.IsDeleted == true) return;
+        busy = true; error = notice = null;
+        ApiResult<AdminMovieReply> result = MovieId.HasValue
+            ? await Api.UpdateAsync(MovieId.Value, form.UpdatePayload(movie!.UpdatedAtUtc), lifetime.Token)
+            : await Api.CreateAsync(form.CreatePayload(), lifetime.Token);
+        if (disposed) return;
+        busy = false;
+        if (!result.Success)
+        {
+            error = result.Error;
+            needsReload = result.Status is 404 or 409 || result.Status == 0 || result.Status >= 500;
+            return;
+        }
+        if (!MovieId.HasValue) { Navigation.NavigateTo("/admin/movies"); return; }
+        movie = result.Value!; form = AdminMovieFormModel.From(movie); notice = "Movie changes were saved.";
+    }
+    public void Dispose() { disposed = true; generation++; Session.Changed -= SessionChanged; lifetime.Cancel(); lifetime.Dispose(); }
+}

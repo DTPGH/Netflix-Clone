@@ -1,4 +1,5 @@
-@if (!failed && CatalogMedia.Image(Src) is { } source)
+@inject HttpClient Http
+@if (!failed && CatalogMedia.Image(Src, Http.BaseAddress) is { } source)
 {
     <img src="@source" alt="@Alt" class="@CssClass" loading="lazy" @onerror="() => failed = true" />
 }

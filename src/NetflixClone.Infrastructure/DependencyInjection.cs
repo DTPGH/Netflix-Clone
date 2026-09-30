@@ -25,6 +25,7 @@ public static class DependencyInjection
 
         services.AddScoped<IUserAccountRepository, UserAccountRepository>();
         services.AddScoped<IMovieCatalogQueries, MovieCatalogQueries>();
+        services.AddScoped<IAdminMovieRepository, AdminMovieRepository>();
         services.AddScoped<IGenreCatalogQueries, GenreCatalogQueries>();
         services.AddScoped<IRoleRepository, RoleRepository>();
         services.AddScoped<IDeviceRepository, DeviceRepository>();

@@ -7,6 +7,11 @@ public partial class NetflixCloneDbContext
 {
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Movie>(entity =>
+        {
+            entity.Property(movie => movie.IsDeleted).IsConcurrencyToken();
+            entity.Property(movie => movie.UpdatedAt).IsConcurrencyToken();
+        });
         modelBuilder.Entity<WatchHistory>().Property(h => h.UpdatedAt).IsConcurrencyToken();
         modelBuilder.Entity<Rating>().Property(rating => rating.UpdatedAt).IsConcurrencyToken();
         modelBuilder.Entity<Profile>(entity =>

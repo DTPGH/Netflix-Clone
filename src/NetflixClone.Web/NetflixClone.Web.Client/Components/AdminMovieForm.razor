@@ -1,0 +1,151 @@
+@inject AdminMoviesApiClient MediaApi
+<section class="auth-panel p-4" aria-labelledby="admin-movie-form-title">
+    <h2 id="admin-movie-form-title" class="h4">@(Editing ? "Edit movie" : "Add movie")</h2>
+    <EditForm Model="Model" OnValidSubmit="Submit" FormName="@FormName">
+        <DataAnnotationsValidator />
+        <fieldset disabled="@(Disabled || uploading)">
+            <div class="row g-3">
+                <div class="col-12 col-lg-8">
+                    <label class="form-label" for="admin-title">Title</label>
+                    <InputText id="admin-title" class="form-control" @bind-Value="Model.Title" />
+                    <ValidationMessage For="() => Model.Title" />
+                </div>
+                <div class="col-12 col-sm-6 col-lg-4">
+                    <label class="form-label" for="admin-release">Release date</label>
+                    <InputDate id="admin-release" class="form-control" @bind-Value="Model.ReleaseDate" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="admin-description">Description</label>
+                    <InputTextArea id="admin-description" class="form-control admin-description" @bind-Value="Model.Description" />
+                    <ValidationMessage For="() => Model.Description" />
+                </div>
+                <div class="col-12 col-sm-6">
+                    <label class="form-label" for="admin-duration">Duration in seconds</label>
+                    <InputNumber id="admin-duration" class="form-control" @bind-Value="Model.DurationSeconds" />
+                    <ValidationMessage For="() => Model.DurationSeconds" />
+                </div>
+                <div class="col-12 col-sm-6">
+                    <label class="form-label" for="admin-rating">Maturity rating</label>
+                    <InputSelect id="admin-rating" class="form-select" @bind-Value="Model.MaturityRating">
+                        <option value="P">P · All ages</option><option value="T13">T13</option>
+                        <option value="T16">T16</option><option value="T18">T18</option>
+                    </InputSelect>
+                    <ValidationMessage For="() => Model.MaturityRating" />
+                </div>
+                <div class="col-12 col-lg-6">
+                    <label class="form-label" for="admin-thumbnail-file">Poster image</label>
+                    <InputFile id="admin-thumbnail-file" class="form-control mb-2" accept="image/jpeg,image/png,image/webp"
+                        OnChange="UploadThumbnail" />
+                    <div class="form-text">Choose JPG, PNG or WebP up to 10 MB. Uploading creates a server-managed identifier.</div>
+                    <label class="form-label mt-2" for="admin-thumbnail">Poster identifier or existing HTTPS URL</label>
+                    <InputText id="admin-thumbnail" class="form-control" @bind-Value="Model.ThumbnailUrl" />
+                    <ValidationMessage For="() => Model.ThumbnailUrl" />
+                    @if (!string.IsNullOrWhiteSpace(Model.ThumbnailUrl))
+                    {
+                        <CatalogImage Src="@Model.ThumbnailUrl" Alt="Poster preview" CssClass="admin-upload-preview mt-2" />
+                    }
+                </div>
+                <div class="col-12 col-lg-6">
+                    <label class="form-label" for="admin-backdrop-file">Backdrop image</label>
+                    <InputFile id="admin-backdrop-file" class="form-control mb-2" accept="image/jpeg,image/png,image/webp"
+                        OnChange="UploadBackdrop" />
+                    <div class="form-text">Choose JPG, PNG or WebP up to 10 MB.</div>
+                    <label class="form-label mt-2" for="admin-backdrop">Backdrop identifier or existing HTTPS URL</label>
+                    <InputText id="admin-backdrop" class="form-control" @bind-Value="Model.BackdropUrl" />
+                    <ValidationMessage For="() => Model.BackdropUrl" />
+                    @if (!string.IsNullOrWhiteSpace(Model.BackdropUrl))
+                    {
+                        <CatalogImage Src="@Model.BackdropUrl" Alt="Backdrop preview" CssClass="admin-upload-backdrop mt-2" />
+                    }
+                </div>
+                <div class="col-12 col-lg-6">
+                    <label class="form-label" for="admin-trailer">YouTube trailer URL</label>
+                    <InputText id="admin-trailer" class="form-control" @bind-Value="Model.TrailerUrl" />
+                    <ValidationMessage For="() => Model.TrailerUrl" />
+                </div>
+                <div class="col-12 col-lg-6">
+                    <label class="form-label" for="admin-video-file">Demo MP4</label>
+                    <InputFile id="admin-video-file" class="form-control mb-2" accept="video/mp4" OnChange="UploadVideo" />
+                    <div class="form-text">Choose an MP4 up to 1 GB. Keep this page open while the upload runs.</div>
+                    <label class="form-label mt-2" for="admin-video">Private video identifier</label>
+                    <InputText id="admin-video" class="form-control" @bind-Value="Model.VideoUrl" placeholder="/videos/example.mp4" />
+                    <ValidationMessage For="() => Model.VideoUrl" />
+                </div>
+                <div class="col-12">
+                    <fieldset class="border rounded p-3">
+                        <legend class="h6 float-none w-auto px-1">Genres</legend>
+                        <div class="row row-cols-2 row-cols-md-3 g-2">
+                            @foreach (var genre in Genres)
+                            {
+                                <div class="col">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="@($"admin-genre-{genre.GenreId}")"
+                                            checked="@Model.GenreIds.Contains(genre.GenreId)" @onchange="e => ChangeGenre(genre.GenreId, e.Value is true)" />
+                                        <label class="form-check-label" for="@($"admin-genre-{genre.GenreId}")">@genre.Name</label>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                        <ValidationMessage For="() => Model.GenreIds" />
+                    </fieldset>
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-4">
+                    <div class="form-check">
+                        <InputCheckbox id="admin-featured" class="form-check-input" @bind-Value="Model.IsFeatured" />
+                        <label class="form-check-label" for="admin-featured">Featured</label>
+                    </div>
+                    <div class="form-check">
+                        <InputCheckbox id="admin-available" class="form-check-input" @bind-Value="Model.IsAvailable" />
+                        <label class="form-check-label" for="admin-available">Available for playback</label>
+                    </div>
+                </div>
+            </div>
+            @if (uploadError is not null) { <div class="alert alert-danger mt-3" role="alert">@uploadError</div> }
+            @if (uploadNotice is not null) { <div class="alert alert-success mt-3" role="status">@uploadNotice</div> }
+            <p class="form-text mt-3">Uploaded files are stored before the movie form is saved. Availability controls playback; soft-delete and restore remain separate.</p>
+            <div class="d-flex flex-wrap gap-2 mt-4">
+                <button type="submit" class="btn btn-danger">@(uploading ? "Uploading…" : Busy ? "Saving…" : Editing ? "Save changes" : "Create movie")</button>
+                <a class="btn btn-outline-light" href="/admin/movies">Cancel</a>
+            </div>
+        </fieldset>
+    </EditForm>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public AdminMovieFormModel Model { get; set; } = new();
+    [Parameter, EditorRequired] public IReadOnlyList<CatalogGenre> Genres { get; set; } = [];
+    [Parameter] public bool Editing { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback Submit { get; set; }
+    [Parameter] public CancellationToken CancellationToken { get; set; }
+    private bool uploading;
+    private string? uploadError, uploadNotice;
+    private string FormName => Editing ? "admin-edit-movie" : "admin-create-movie";
+    private void ChangeGenre(int genreId, bool selected)
+    {
+        if (selected) Model.GenreIds.Add(genreId); else Model.GenreIds.Remove(genreId);
+    }
+    private Task UploadThumbnail(InputFileChangeEventArgs args) => UploadImage(args.File, true);
+    private Task UploadBackdrop(InputFileChangeEventArgs args) => UploadImage(args.File, false);
+    private async Task UploadImage(IBrowserFile file, bool thumbnail)
+    {
+        if (Disabled || Busy || uploading) return;
+        uploading = true; uploadError = uploadNotice = null;
+        var result = await MediaApi.UploadImageAsync(file, CancellationToken);
+        uploading = false;
+        if (!result.Success) { uploadError = result.Error; return; }
+        if (thumbnail) Model.ThumbnailUrl = result.Value!.Value; else Model.BackdropUrl = result.Value!.Value;
+        uploadNotice = $"{file.Name} uploaded. Save the movie to keep this identifier.";
+    }
+    private async Task UploadVideo(InputFileChangeEventArgs args)
+    {
+        if (Disabled || Busy || uploading) return;
+        uploading = true; uploadError = uploadNotice = null;
+        var result = await MediaApi.UploadVideoAsync(args.File, CancellationToken);
+        uploading = false;
+        if (!result.Success) { uploadError = result.Error; return; }
+        Model.VideoUrl = result.Value!.Value;
+        uploadNotice = $"{args.File.Name} uploaded. Save the movie to associate it with this record.";
+    }
+}

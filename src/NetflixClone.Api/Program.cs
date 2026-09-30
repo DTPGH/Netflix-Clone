@@ -12,6 +12,10 @@ using NetflixClone.Application.MyList;
 using NetflixClone.Application.Ratings;
 using NetflixClone.Application.Personalization;
 using NetflixClone.Application.Viewing;
+using NetflixClone.Application.Admin.Movies;
+using NetflixClone.Application.Admin.Media;
+using NetflixClone.Application.Common.Abstractions.Media;
+using NetflixClone.Infrastructure.Media;
 using NetflixClone.Infrastructure;
 using NetflixClone.Infrastructure.Security;
 using NetflixClone.Api.OpenApi;
@@ -30,6 +34,10 @@ builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.W
 builder.Services.AddDataProtection().SetApplicationName("NetflixClone.Playback");
 builder.Services.AddSingleton<IPlaybackTicketService, PlaybackTicketService>();
 builder.Services.AddSingleton<PrivateDemoMedia>();
+builder.Services.AddSingleton<CatalogImageMedia>();
+builder.Services.AddSingleton<IAdminMediaStorage>(services => new LocalAdminMediaStorage(
+    services.GetRequiredService<CatalogImageMedia>().RootPath,
+    services.GetRequiredService<PrivateDemoMedia>().RootPath));
 builder.Services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, PlaybackTicketHandler>(
     PlaybackTicketHandler.SchemeName, _ => { });
 
@@ -96,6 +104,8 @@ builder.Services.AddScoped<IBrowseMoviesUseCase, BrowseMoviesUseCase>();
 builder.Services.AddScoped<IGetMovieDetailUseCase, GetMovieDetailUseCase>();
 builder.Services.AddScoped<IGetMoviePlaybackUseCase, GetMoviePlaybackUseCase>();
 builder.Services.AddScoped<IWatchProgressUseCase, WatchProgressUseCase>();
+builder.Services.AddScoped<IAdminMovieManagementUseCase, AdminMovieManagementUseCase>();
+builder.Services.AddScoped<IAdminMediaUploadUseCase, AdminMediaUploadUseCase>();
 builder.Services.AddScoped<IListGenresUseCase, ListGenresUseCase>();
 builder.Services.AddScoped<IListDevicesUseCase, ListDevicesUseCase>();
 builder.Services.AddScoped<IRevokeDeviceUseCase, RevokeDeviceUseCase>();
@@ -134,6 +144,7 @@ builder.Services.AddSwaggerGen(options =>
 var app = builder.Build();
 // Fail early if the configured media directory is a public web root.
 _ = app.Services.GetRequiredService<PrivateDemoMedia>();
+_ = app.Services.GetRequiredService<CatalogImageMedia>();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
