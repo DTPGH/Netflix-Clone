@@ -3,6 +3,7 @@ using NetflixClone.Domain.Entities;
 namespace NetflixClone.Application.Common.Abstractions.Persistence;
 public interface IWatchHistoryRepository
 {
+    Task<WatchHistoryPage> ListAsync(int profileId, int page, int pageSize, CancellationToken ct = default);
     Task<WatchHistory?> GetAsync(int profileId, int movieId, CancellationToken ct = default);
     Task AddAsync(WatchHistory history, CancellationToken ct = default);
     Task<IReadOnlyList<ContinueWatchingItem>> ListContinueAsync(int profileId, int limit, CancellationToken ct = default);

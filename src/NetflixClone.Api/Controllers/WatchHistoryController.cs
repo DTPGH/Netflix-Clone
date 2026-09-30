@@ -11,6 +11,17 @@ namespace NetflixClone.Api.Controllers;
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class WatchHistoryController(IWatchProgressUseCase useCase) : ControllerBase
 {
+    [HttpGet("watch-history")]
+    public async Task<IActionResult> List(int profileId, [FromQuery] int page = 1, CancellationToken ct = default)
+    {
+        if (!Account(out var account)) return Unauthorized();
+        var result = await useCase.ListAsync(account, profileId, page, ct);
+        return result.IsFailure ? Failure(result.Error!) : Ok(new {
+            Items = result.Value!.Items.Select(i => new {
+                Movie = MovieSummaryResponse.From(i.Movie), i.PositionSeconds, i.IsCompleted, i.LastWatchedAtUtc
+            }), result.Value.TotalCount
+        });
+    }
     [HttpGet("watch-history/{movieId:int:min(1)}")]
     public async Task<IActionResult> Get(int profileId, int movieId, CancellationToken ct)
     {

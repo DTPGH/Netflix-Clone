@@ -6,8 +6,13 @@ namespace NetflixClone.Web.Client.Services;
 public sealed record WatchProgressReply(int MovieId, int PositionSeconds, bool IsCompleted, DateTime? UpdatedAtUtc);
 public sealed record ContinueWatchingCard(MovieCard Movie, int PositionSeconds, DateTime LastWatchedAtUtc);
 public sealed record ContinueWatchingReply(ContinueWatchingCard[] Items);
+public sealed record WatchHistoryCard(MovieCard Movie, int PositionSeconds, bool IsCompleted, DateTime LastWatchedAtUtc);
+public sealed record WatchHistoryReply(WatchHistoryCard[] Items, int TotalCount);
 public sealed class WatchHistoryApiClient(HttpClient http, AuthSession session)
 {
+    public Task<ApiResult<WatchHistoryReply>> ListAsync(int profileId, int page, CancellationToken ct)
+        => session.SendAuthenticatedAsync(token => Send<WatchHistoryReply>(HttpMethod.Get,
+            $"api/profiles/{profileId}/watch-history?page={page}", null, token, ct), retryUnauthorized: true);
     public Task<ApiResult<WatchProgressReply>> GetAsync(int profileId, int movieId, CancellationToken ct)
         => session.SendAuthenticatedAsync(token => Send<WatchProgressReply>(HttpMethod.Get,
             $"api/profiles/{profileId}/watch-history/{movieId}", null, token, ct), retryUnauthorized: true);
