@@ -5,6 +5,8 @@ public sealed record WatchProgress(int MovieId, int PositionSeconds, bool IsComp
 public sealed record SaveWatchProgress(int UserAccountId, int ProfileId, int MovieId, int PositionSeconds,
     int DurationSeconds, bool Ended, DateTime? ExpectedUpdatedAtUtc);
 public sealed record ContinueWatchingItem(MovieSummary Movie, int PositionSeconds, DateTime LastWatchedAtUtc);
+public sealed record WatchHistoryItem(MovieSummary Movie, int PositionSeconds, bool IsCompleted, DateTime LastWatchedAtUtc);
+public sealed record WatchHistoryPage(IReadOnlyList<WatchHistoryItem> Items, int TotalCount);
 public static class WatchProgressErrors
 {
     public static readonly Error Invalid = new("WatchHistory.InvalidProgress", "Invalid video position or duration.", ErrorType.Validation);

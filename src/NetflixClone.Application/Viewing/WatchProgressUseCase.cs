@@ -8,6 +8,7 @@ using NetflixClone.Domain.Entities;
 namespace NetflixClone.Application.Viewing;
 public interface IWatchProgressUseCase
 {
+    Task<Result<WatchHistoryPage>> ListAsync(int accountId, int profileId, int page, CancellationToken ct = default);
     Task<Result<WatchProgress>> GetAsync(ProfileMovieQuery query, CancellationToken ct = default);
     Task<Result<WatchProgress>> SaveAsync(SaveWatchProgress command, CancellationToken ct = default);
     Task<Result<IReadOnlyList<ContinueWatchingItem>>> ContinueAsync(int accountId, int profileId, int limit, CancellationToken ct = default);
@@ -15,6 +16,15 @@ public interface IWatchProgressUseCase
 public sealed class WatchProgressUseCase(IGetMoviePlaybackUseCase playback, IProfileRepository profiles,
     IWatchHistoryRepository history, IUnitOfWork unitOfWork, IClock clock) : IWatchProgressUseCase
 {
+    public async Task<Result<WatchHistoryPage>> ListAsync(int accountId, int profileId, int page, CancellationToken ct = default)
+    {
+        var profile = await profiles.GetByIdForAccountAsync(accountId, profileId, ct);
+        if (profile is null || profile.IsDeleted)
+            return Result<WatchHistoryPage>.Failure(WatchProgressErrors.ProfileNotFound);
+        if (page is < 1 or > 1000000)
+            return Result<WatchHistoryPage>.Failure(new("WatchHistory.InvalidPage", "Invalid history page.", ErrorType.Validation));
+        return Result<WatchHistoryPage>.Success(await history.ListAsync(profileId, page, 20, ct));
+    }
     private static WatchProgress Map(int movieId, WatchHistory? row) => new(movieId, row?.LastPositionSeconds ?? 0,
         row?.IsCompleted ?? false, row is null ? null : DateTime.SpecifyKind(row.UpdatedAt, DateTimeKind.Utc));
     public async Task<Result<WatchProgress>> GetAsync(ProfileMovieQuery query, CancellationToken ct = default)

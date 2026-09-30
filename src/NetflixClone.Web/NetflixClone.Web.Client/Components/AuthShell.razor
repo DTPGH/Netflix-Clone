@@ -14,6 +14,7 @@
                 <AuthorizeView>
                     <Authorized>
                         <NavLink class="nav-link" href="/my-list">My List</NavLink>
+                        <NavLink class="nav-link" href="/watch-history">Watch history</NavLink>
                         <NavLink class="nav-link text-break" href="/select-profile">@(ActiveProfile.Selected is { } selected ? $"Profile: {selected.Name}" : "Choose profile")</NavLink>
                         <NavLink class="nav-link" href="/">My account</NavLink>
                         <NavLink class="nav-link" href="/profiles">Profiles</NavLink>
