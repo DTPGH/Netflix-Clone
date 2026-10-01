@@ -35,7 +35,9 @@ public sealed class AdminMovieRepository(NetflixCloneDbContext db) : IAdminMovie
                 entity.DurationSeconds, entity.ThumbnailUrl, entity.BackdropUrl, entity.TrailerUrl, entity.VideoUrl,
                 entity.MaturityRating, entity.MinAge, entity.IsFeatured, entity.IsAvailable, entity.IsDeleted, entity.CreatedAt,
                 entity.UpdatedAt, entity.Genres.OrderBy(genre => genre.Name).ThenBy(genre => genre.Id)
-                    .Select(genre => new AdminMovieGenre(genre.Id, genre.Name)).ToArray()))
+                    .Select(genre => new AdminMovieGenre(genre.Id, genre.Name)).ToArray(),
+                entity.MovieCredits.OrderBy(c => c.CreditType).ThenBy(c => c.Person.FullName).ThenBy(c => c.PersonId)
+                    .Select(c => new AdminMovieCredit(c.PersonId, c.Person.FullName, c.CreditType, c.CharacterName)).ToArray()))
             .AsSplitQuery().FirstOrDefaultAsync(cancellationToken);
         return movie is null ? null : movie with {
             CreatedAtUtc = DateTime.SpecifyKind(movie.CreatedAtUtc, DateTimeKind.Utc),
@@ -44,7 +46,8 @@ public sealed class AdminMovieRepository(NetflixCloneDbContext db) : IAdminMovie
     }
 
     public Task<Movie?> GetForUpdateAsync(int movieId, CancellationToken cancellationToken = default)
-        => db.Movies.Include(movie => movie.Genres)
+        => db.Movies.Include(movie => movie.Genres).Include(movie => movie.MovieCredits).ThenInclude(c => c.Person)
+            .AsSplitQuery()
             .SingleOrDefaultAsync(movie => movie.Id == movieId, cancellationToken);
 
     public async Task<IReadOnlyList<Genre>> GetGenresAsync(IReadOnlyCollection<int> genreIds,
@@ -53,4 +56,15 @@ public sealed class AdminMovieRepository(NetflixCloneDbContext db) : IAdminMovie
 
     public async Task AddAsync(Movie movie, CancellationToken cancellationToken = default)
         => await db.Movies.AddAsync(movie, cancellationToken);
+
+    public async Task<IReadOnlyList<AdminPerson>> SearchPeopleAsync(string search, CancellationToken cancellationToken = default)
+        => await db.People.AsNoTracking().Where(p => p.FullName.Contains(search))
+            .OrderBy(p => p.FullName).ThenBy(p => p.Id).Take(50)
+            .Select(p => new AdminPerson(p.Id, p.FullName)).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Person>> GetPeopleAsync(IReadOnlyCollection<int> personIds, CancellationToken cancellationToken = default)
+        => await db.People.Where(p => personIds.Contains(p.Id)).ToListAsync(cancellationToken);
+    public void RemoveCredit(MovieCredit credit) => db.MovieCredits.Remove(credit);
+    public async Task AddPersonAsync(Person person, CancellationToken cancellationToken = default)
+        => await db.People.AddAsync(person, cancellationToken);
 }

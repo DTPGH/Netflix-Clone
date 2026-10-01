@@ -9,6 +9,8 @@ namespace NetflixClone.Application.Admin.Movies;
 
 public interface IAdminMovieManagementUseCase
 {
+    Task<Result<AdminPersonDetail>> CreatePersonAsync(CreateAdminPersonCommand command, CancellationToken cancellationToken = default);
+    Task<Result<IReadOnlyList<AdminPerson>>> SearchPeopleAsync(int actorUserAccountId, string? search, CancellationToken cancellationToken = default);
     Task<Result<AdminMoviePage>> ListAsync(ListAdminMoviesQuery query, CancellationToken cancellationToken = default);
     Task<Result<AdminMovieDetail>> GetAsync(GetAdminMovieQuery query, CancellationToken cancellationToken = default);
     Task<Result<AdminMovieDetail>> CreateAsync(CreateAdminMovieCommand command, CancellationToken cancellationToken = default);
@@ -20,6 +22,32 @@ public interface IAdminMovieManagementUseCase
 public sealed class AdminMovieManagementUseCase(IAdminMovieRepository movies, IUserAccountRepository accounts,
     IUnitOfWork unitOfWork, IClock clock) : IAdminMovieManagementUseCase
 {
+    public async Task<Result<AdminPersonDetail>> CreatePersonAsync(CreateAdminPersonCommand command, CancellationToken cancellationToken = default)
+    {
+        var access = await AuthorizeAsync(command.ActorUserAccountId, cancellationToken);
+        if (access is not null) return Result<AdminPersonDetail>.Failure(access);
+        var name = AdminMovieRules.Optional(command.FullName);
+        var photo = AdminMovieRules.Optional(command.PhotoUrl);
+        var now = clock.UtcNow;
+        if (name is null || name.Length > 200 || photo?.Length > 500 || !AdminMovieRules.Image(photo) ||
+            command.BirthDate > DateOnly.FromDateTime(now))
+            return Result<AdminPersonDetail>.Failure(AdminMovieErrors.InvalidPerson);
+        var person = new Person { FullName = name, PhotoUrl = photo, BirthDate = command.BirthDate,
+            CreatedAt = now, UpdatedAt = now };
+        await movies.AddPersonAsync(person, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        return Result<AdminPersonDetail>.Success(new(person.Id, person.FullName, person.PhotoUrl, person.BirthDate));
+    }
+
+    public async Task<Result<IReadOnlyList<AdminPerson>>> SearchPeopleAsync(int actorUserAccountId, string? search, CancellationToken cancellationToken = default)
+    {
+        var access = await AuthorizeAsync(actorUserAccountId, cancellationToken);
+        if (access is not null) return Result<IReadOnlyList<AdminPerson>>.Failure(access);
+        var term = AdminMovieRules.Optional(search) ?? "";
+        if (term.Length > 100) return Result<IReadOnlyList<AdminPerson>>.Failure(AdminMovieErrors.InvalidQuery);
+        return Result<IReadOnlyList<AdminPerson>>.Success(await movies.SearchPeopleAsync(term, cancellationToken));
+    }
+
     public async Task<Result<AdminMoviePage>> ListAsync(ListAdminMoviesQuery query, CancellationToken cancellationToken = default)
     {
         var access = await AuthorizeAsync(query.ActorUserAccountId, cancellationToken);
@@ -53,9 +81,12 @@ public sealed class AdminMovieManagementUseCase(IAdminMovieRepository movies, IU
         if (normalized is null) return Result<AdminMovieDetail>.Failure(AdminMovieErrors.InvalidMovie);
         var genres = await GenresAsync(normalized.GenreIds!, cancellationToken);
         if (genres is null) return Result<AdminMovieDetail>.Failure(AdminMovieErrors.InvalidGenres);
+        var people = await CreditsAsync(normalized.Credits, cancellationToken);
+        if (people is null) return Result<AdminMovieDetail>.Failure(AdminMovieErrors.InvalidCredits);
         var now = clock.UtcNow;
         var movie = new Movie { CreatedAt = now, UpdatedAt = now };
         Apply(movie, normalized, genres);
+        ApplyCredits(movie, normalized.Credits, people, now);
         await movies.AddAsync(movie, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<AdminMovieDetail>.Success(Map(movie));
@@ -75,7 +106,11 @@ public sealed class AdminMovieManagementUseCase(IAdminMovieRepository movies, IU
             return Result<AdminMovieDetail>.Failure(AdminMovieErrors.ConcurrentChange);
         var genres = await GenresAsync(normalized.GenreIds!, cancellationToken);
         if (genres is null) return Result<AdminMovieDetail>.Failure(AdminMovieErrors.InvalidGenres);
+        var people = await CreditsAsync(normalized.Credits, cancellationToken);
+        if (people is null) return Result<AdminMovieDetail>.Failure(AdminMovieErrors.InvalidCredits);
         Apply(movie, normalized, genres);
+        // A missing collection on older clients preserves credits; an empty collection clears them.
+        if (normalized.Credits is not null) ApplyCredits(movie, normalized.Credits, people, clock.UtcNow);
         movie.UpdatedAt = AdminMovieRules.NextUpdatedAt(movie.UpdatedAt, clock.UtcNow);
         try { await unitOfWork.SaveChangesAsync(cancellationToken); }
         catch (PersistenceConcurrencyException) { return Result<AdminMovieDetail>.Failure(AdminMovieErrors.ConcurrentChange); }
@@ -154,6 +189,41 @@ public sealed class AdminMovieManagementUseCase(IAdminMovieRepository movies, IU
             TrailerUrl = trailer, VideoUrl = video, MaturityRating = rating };
     }
 
+    private async Task<IReadOnlyList<Person>?> CreditsAsync(IReadOnlyCollection<SaveAdminMovieCredit>? credits, CancellationToken ct)
+    {
+        if (credits is null || credits.Count == 0) return Array.Empty<Person>();
+        if (credits.Count > 100 || credits.Any(c => c is null || c.PersonId <= 0 || c.CreditType is not ("Actor" or "Director") ||
+            AdminMovieRules.Optional(c.CharacterName)?.Length > 200 ||
+            c.CreditType == "Director" && AdminMovieRules.Optional(c.CharacterName) is not null) ||
+            credits.Select(c => (c.PersonId, c.CreditType)).Distinct().Count() != credits.Count) return null;
+        var ids = credits.Select(c => c.PersonId).Distinct().ToArray();
+        var people = await movies.GetPeopleAsync(ids, ct);
+        return people.Count == ids.Length ? people : null;
+    }
+
+    private void ApplyCredits(Movie movie, IReadOnlyCollection<SaveAdminMovieCredit>? credits,
+        IReadOnlyList<Person> people, DateTime now)
+    {
+        var requested = credits ?? Array.Empty<SaveAdminMovieCredit>();
+        foreach (var existing in movie.MovieCredits.ToArray())
+            if (!requested.Any(c => c.PersonId == existing.PersonId && c.CreditType == existing.CreditType))
+            {
+                movies.RemoveCredit(existing);
+                movie.MovieCredits.Remove(existing);
+            }
+        foreach (var credit in requested)
+        {
+            var existing = movie.MovieCredits.SingleOrDefault(c => c.PersonId == credit.PersonId && c.CreditType == credit.CreditType);
+            if (existing is null)
+            {
+                existing = new MovieCredit { PersonId = credit.PersonId, Person = people.Single(p => p.Id == credit.PersonId),
+                    CreditType = credit.CreditType!, CreatedAt = now };
+                movie.MovieCredits.Add(existing);
+            }
+            existing.CharacterName = AdminMovieRules.Optional(credit.CharacterName);
+        }
+    }
+
     private static void Apply(Movie target, SaveAdminMovieData source, IReadOnlyList<Genre> genres)
     {
         target.Title = source.Title!; target.Description = source.Description; target.ReleaseDate = source.ReleaseDate;
@@ -168,5 +238,7 @@ public sealed class AdminMovieManagementUseCase(IAdminMovieRepository movies, IU
         movie.DurationSeconds, movie.ThumbnailUrl, movie.BackdropUrl, movie.TrailerUrl, movie.VideoUrl,
         movie.MaturityRating, movie.MinAge, movie.IsFeatured, movie.IsAvailable, movie.IsDeleted,
         DateTime.SpecifyKind(movie.CreatedAt, DateTimeKind.Utc), DateTime.SpecifyKind(movie.UpdatedAt, DateTimeKind.Utc),
-        movie.Genres.OrderBy(g => g.Name).ThenBy(g => g.Id).Select(g => new AdminMovieGenre(g.Id, g.Name)).ToArray());
+        movie.Genres.OrderBy(g => g.Name).ThenBy(g => g.Id).Select(g => new AdminMovieGenre(g.Id, g.Name)).ToArray(),
+        movie.MovieCredits.OrderBy(c => c.CreditType).ThenBy(c => c.Person.FullName).ThenBy(c => c.PersonId)
+            .Select(c => new AdminMovieCredit(c.PersonId, c.Person.FullName, c.CreditType, c.CharacterName)).ToArray());
 }

@@ -25,7 +25,11 @@ public class SaveAdminMovieRequest
     public bool IsFeatured { get; set; }
     public bool IsAvailable { get; set; }
     public int[]? GenreIds { get; set; }
+    public SaveAdminMovieCreditRequest[]? Credits { get; set; }
 }
+
+public sealed record SaveAdminMovieCreditRequest(int PersonId, string? CreditType, string? CharacterName);
+public sealed record CreateAdminPersonRequest(string? FullName, string? PhotoUrl, DateOnly? BirthDate);
 
 public sealed class UpdateAdminMovieRequest : SaveAdminMovieRequest
 {

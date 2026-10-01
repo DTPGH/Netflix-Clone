@@ -1,0 +1,155 @@
+@inject AdminMoviesApiClient Api
+@implements IDisposable
+
+<fieldset class="border rounded p-3" disabled="@(Busy || creating || uploading)">
+    <legend class="h6 float-none w-auto px-1">Actors and directors</legend>
+    <p class="form-text mt-0">Search existing people, choose a role, then add them to this movie.</p>
+    <div class="row g-2 mb-3">
+        <div class="col-12 col-md-6">
+            <label for="credit-search" class="form-label">Person name</label>
+            <input id="credit-search" class="form-control" maxlength="100" @bind="search" />
+        </div>
+        <div class="col-12 col-md-3">
+            <label for="credit-role" class="form-label">Role to add</label>
+            <select id="credit-role" class="form-select" @bind="role"><option>Actor</option><option>Director</option></select>
+        </div>
+        <div class="col-12 col-md-3 d-flex align-items-end">
+            <button type="button" class="btn btn-outline-light w-100" disabled="@searching" @onclick="Search">@(searching ? "Searching…" : "Search people")</button>
+        </div>
+    </div>
+    @if (error is not null) { <p class="text-danger" role="alert">@error</p> }
+    @if (notice is not null) { <p class="text-success" role="status">@notice</p> }
+    <button type="button" class="btn btn-outline-light mb-3" @onclick="() => showCreate = !showCreate">@(showCreate ? "Close new person" : "Create new person")</button>
+    @if (showCreate)
+    {
+        <section class="border rounded p-3 mb-3" aria-labelledby="new-person-heading">
+            <h3 id="new-person-heading" class="h6">New person</h3>
+            <p class="form-text">Search first to avoid accidentally duplicating a profile. Different people may share a name.</p>
+            <div class="row g-3">
+                <div class="col-12 col-md-8">
+                    <label for="person-full-name" class="form-label">Full name</label>
+                    <input id="person-full-name" class="form-control" maxlength="200" @bind="fullName" />
+                </div>
+                <div class="col-12 col-md-4">
+                    <label for="person-birth-date" class="form-label">Birth date (optional)</label>
+                    <input id="person-birth-date" type="date" class="form-control" @bind="birthDate" />
+                </div>
+                <div class="col-12">
+                    <label for="person-photo-file" class="form-label">Photo (optional)</label>
+                    <InputFile id="person-photo-file" class="form-control" accept="image/jpeg,image/png,image/webp" OnChange="UploadPhoto" />
+                    <div class="form-text">JPG, PNG or WebP up to 10 MB.</div>
+                    <label for="person-photo-url" class="form-label mt-2">Photo identifier or HTTPS URL</label>
+                    <input id="person-photo-url" class="form-control" maxlength="500" @bind="photoUrl" />
+                    @if (!string.IsNullOrWhiteSpace(photoUrl))
+                    {
+                        <CatalogImage Src="@photoUrl" Alt="New person photo" CssClass="admin-upload-preview mt-2" />
+                    }
+                </div>
+            </div>
+            <button type="button" class="btn btn-danger mt-3" disabled="@createUncertain" @onclick="CreatePerson">Create person</button>
+            <p class="form-text mb-0">Creating saves the person immediately. Add them to the movie below, then save the movie.</p>
+            @if (createUncertain) { <p class="text-warning mt-2 mb-0">The result could not be confirmed. Search for this person or reload before creating again.</p> }
+        </section>
+    }
+    @if (results is not null)
+    {
+        <div class="border rounded p-2 mb-3" style="max-height: 16rem; overflow-y: auto;">
+            @if (results.Length == 0) { <p class="text-muted mb-0">No people found. Try another name.</p> }
+            @foreach (var person in results)
+            {
+                <div class="d-flex justify-content-between align-items-center gap-3 p-2">
+                    <span>@person.FullName <span class="text-muted small">(#@person.PersonId)</span></span>
+                    <button type="button" class="btn btn-sm btn-outline-light" disabled="@AlreadyAdded(person.PersonId)" @onclick="() => Add(person)">Add @role</button>
+                </div>
+            }
+        </div>
+    }
+    @foreach (var credit in Model.Credits)
+    {
+        <div @key="credit" class="row g-2 align-items-end border-bottom pb-3 mb-3">
+            <div class="col-12 col-md-5"><span class="fw-semibold">@credit.FullName</span><div class="text-muted">@credit.CreditType</div></div>
+            <div class="col-12 col-md-5">
+                @if (credit.CreditType == "Actor")
+                {
+                    <label class="form-label" for="@($"character-{credit.PersonId}")">Character name (optional)</label>
+                    <InputText id="@($"character-{credit.PersonId}")" class="form-control" maxlength="200" @bind-Value="credit.CharacterName" />
+                }
+            </div>
+            <div class="col-12 col-md-2"><button type="button" class="btn btn-outline-light w-100" @onclick="() => Model.Credits.Remove(credit)">Remove</button></div>
+        </div>
+    }
+    @if (Model.Credits.Count == 0) { <p class="text-muted">No actors or directors assigned.</p> }
+    <ValidationMessage For="() => Model.Credits" />
+</fieldset>
+
+@code {
+    [Parameter, EditorRequired] public AdminMovieFormModel Model { get; set; } = new();
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<bool> OperationChanged { get; set; }
+    private string search = "", role = "Actor";
+    private string? error, notice, photoUrl;
+    private string fullName = "";
+    private DateTime? birthDate;
+    private AdminPerson[]? results;
+    private bool searching, disposed, showCreate, creating, uploading, createUncertain;
+    private readonly CancellationTokenSource lifetime = new();
+    private bool AlreadyAdded(int id) => Model.Credits.Count >= 100 || Model.Credits.Any(c => c.PersonId == id && c.CreditType == role);
+    private void Add(AdminPerson person)
+    {
+        if (Busy || AlreadyAdded(person.PersonId)) return;
+        Model.Credits.Add(new() { PersonId = person.PersonId, FullName = person.FullName, CreditType = role });
+    }
+    private async Task Search()
+    {
+        if (Busy || searching) return;
+        searching = true; error = null;
+        var result = await Api.SearchPeopleAsync(search.Trim(), lifetime.Token);
+        if (disposed) return;
+        searching = false;
+        results = result.Success ? result.Value : null;
+        error = result.Success ? null : result.Error;
+    }
+    private async Task UploadPhoto(InputFileChangeEventArgs args)
+    {
+        if (Busy || creating || uploading) return;
+        uploading = true; error = notice = null;
+        await OperationChanged.InvokeAsync(true);
+        try
+        {
+            var result = await Api.UploadImageAsync(args.File, lifetime.Token);
+            if (disposed) return;
+            if (!result.Success) { error = result.Error; return; }
+            photoUrl = result.Value!.Value;
+            notice = "Photo uploaded. Create the person to save this identifier.";
+        }
+        finally { uploading = false; if (!disposed) await OperationChanged.InvokeAsync(false); }
+    }
+    private async Task CreatePerson()
+    {
+        if (Busy || creating || uploading || createUncertain) return;
+        error = notice = null;
+        if (string.IsNullOrWhiteSpace(fullName) || fullName.Trim().Length > 200)
+        { error = "Enter a full name of at most 200 characters."; return; }
+        creating = true;
+        await OperationChanged.InvokeAsync(true);
+        try
+        {
+            var result = await Api.CreatePersonAsync(new(fullName.Trim(), photoUrl,
+                birthDate.HasValue ? DateOnly.FromDateTime(birthDate.Value) : null), lifetime.Token);
+            if (disposed) return;
+            if (!result.Success)
+            {
+                error = result.Error;
+                createUncertain = result.Status == 0 || result.Status >= 500;
+                return;
+            }
+            var person = result.Value!;
+            results = [new(person.PersonId, person.FullName)];
+            search = person.FullName;
+            fullName = ""; photoUrl = null; birthDate = null; showCreate = false;
+            notice = "Person created. Choose Actor or Director and add them to this movie.";
+        }
+        finally { creating = false; if (!disposed) await OperationChanged.InvokeAsync(false); }
+    }
+    public void Dispose() { disposed = true; lifetime.Cancel(); lifetime.Dispose(); }
+}

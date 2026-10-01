@@ -17,6 +17,10 @@ public sealed class AdminMediaUploadTransport(Uri apiBase) : IDisposable
 public sealed class AdminMoviesApiClient(HttpClient http, AuthSession session, AdminMediaUploadTransport uploadTransport)
 {
     public const long MaxImageBytes = 10 * 1024 * 1024;
+    public Task<ApiResult<AdminPersonDetail>> CreatePersonAsync(CreateAdminPersonPayload payload, CancellationToken ct)
+        => SendAuthenticatedAsync<AdminPersonDetail>(HttpMethod.Post, "api/admin/movies/people", payload, false, ct);
+    public Task<ApiResult<AdminPerson[]>> SearchPeopleAsync(string search, CancellationToken ct)
+        => SendAuthenticatedAsync<AdminPerson[]>(HttpMethod.Get, $"api/admin/movies/people?search={Uri.EscapeDataString(search)}", null, true, ct);
     public const long MaxVideoBytes = 1024L * 1024 * 1024;
     public Task<ApiResult<AdminMoviesReply>> ListAsync(int page, string search, int? genreId,
         bool? isAvailable, string deletion, CancellationToken ct) => SendAuthenticatedAsync<AdminMoviesReply>(

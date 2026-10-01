@@ -13,6 +13,23 @@ namespace NetflixClone.Api.Controllers;
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class AdminMoviesController(IAdminMovieManagementUseCase useCase) : ControllerBase
 {
+    [HttpPost("people")]
+    public async Task<IActionResult> CreatePerson(CreateAdminPersonRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId)) return Unauthorized();
+        var result = await useCase.CreatePersonAsync(new(accountId, request.FullName, request.PhotoUrl, request.BirthDate), cancellationToken);
+        if (result.IsFailure) return Failure(result.Error!);
+        var person = result.Value!;
+        return StatusCode(StatusCodes.Status201Created,
+            new AdminPersonDetailResponse(person.PersonId, person.FullName, person.PhotoUrl, person.BirthDate));
+    }
+    [HttpGet("people")]
+    public async Task<IActionResult> People([FromQuery] string? search, CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId)) return Unauthorized();
+        var result = await useCase.SearchPeopleAsync(accountId, search, cancellationToken);
+        return result.IsFailure ? Failure(result.Error!) : Ok(result.Value!.Select(p => new AdminPersonResponse(p.PersonId, p.FullName)));
+    }
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] ListAdminMoviesRequest request, CancellationToken cancellationToken)
     {
@@ -74,7 +91,9 @@ public sealed class AdminMoviesController(IAdminMovieManagementUseCase useCase) 
     private static SaveAdminMovieData Data(SaveAdminMovieRequest request) => new(request.Title,
         request.Description, request.ReleaseDate, request.DurationSeconds, request.ThumbnailUrl,
         request.BackdropUrl, request.TrailerUrl, request.VideoUrl, request.MaturityRating,
-        request.IsFeatured, request.IsAvailable, request.GenreIds);
+        request.IsFeatured, request.IsAvailable, request.GenreIds,
+        request.Credits?.Select(c => c is null ? new SaveAdminMovieCredit(0, null, null) :
+            new SaveAdminMovieCredit(c.PersonId, c.CreditType, c.CharacterName)).ToArray());
 
     private bool TryGetAccountId(out int accountId)
         => int.TryParse(User.FindFirst("sub")?.Value, out accountId) && accountId > 0;

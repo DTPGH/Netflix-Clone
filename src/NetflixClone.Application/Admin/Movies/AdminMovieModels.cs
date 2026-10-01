@@ -7,11 +7,16 @@ public sealed record AdminMovieSummary(int MovieId, string Title, DateOnly? Rele
 public sealed record AdminMoviePage(IReadOnlyList<AdminMovieSummary> Items, int Page, int PageSize, int TotalCount);
 
 public sealed record AdminMovieGenre(int GenreId, string Name);
+public sealed record AdminPerson(int PersonId, string FullName);
+public sealed record AdminPersonDetail(int PersonId, string FullName, string? PhotoUrl, DateOnly? BirthDate);
+public sealed record CreateAdminPersonCommand(int ActorUserAccountId, string? FullName, string? PhotoUrl, DateOnly? BirthDate);
+public sealed record AdminMovieCredit(int PersonId, string FullName, string CreditType, string? CharacterName);
+public sealed record SaveAdminMovieCredit(int PersonId, string? CreditType, string? CharacterName);
 
 public sealed record AdminMovieDetail(int MovieId, string Title, string? Description, DateOnly? ReleaseDate,
     int DurationSeconds, string? ThumbnailUrl, string? BackdropUrl, string? TrailerUrl, string? VideoUrl,
     string MaturityRating, byte MinAge, bool IsFeatured, bool IsAvailable, bool IsDeleted, DateTime CreatedAtUtc,
-    DateTime UpdatedAtUtc, IReadOnlyList<AdminMovieGenre> Genres);
+    DateTime UpdatedAtUtc, IReadOnlyList<AdminMovieGenre> Genres, IReadOnlyList<AdminMovieCredit> Credits);
 
 public sealed record AdminMovieCriteria(int Page, int PageSize, string? Search, int? GenreId,
     bool? IsAvailable, AdminMovieDeletionFilter Deletion, AdminMovieSort Sort);
@@ -24,7 +29,8 @@ public sealed record ListAdminMoviesQuery(int ActorUserAccountId, int Page, int 
 public sealed record GetAdminMovieQuery(int ActorUserAccountId, int MovieId);
 public sealed record SaveAdminMovieData(string? Title, string? Description, DateOnly? ReleaseDate,
     int DurationSeconds, string? ThumbnailUrl, string? BackdropUrl, string? TrailerUrl, string? VideoUrl,
-    string? MaturityRating, bool IsFeatured, bool IsAvailable, IReadOnlyCollection<int>? GenreIds);
+    string? MaturityRating, bool IsFeatured, bool IsAvailable, IReadOnlyCollection<int>? GenreIds,
+    IReadOnlyCollection<SaveAdminMovieCredit>? Credits = null);
 public sealed record CreateAdminMovieCommand(int ActorUserAccountId, SaveAdminMovieData Movie);
 public sealed record UpdateAdminMovieCommand(int ActorUserAccountId, int MovieId, SaveAdminMovieData Movie,
     DateTime? ExpectedUpdatedAtUtc);

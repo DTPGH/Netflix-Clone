@@ -3,7 +3,7 @@
     <h2 id="admin-movie-form-title" class="h4">@(Editing ? "Edit movie" : "Add movie")</h2>
     <EditForm Model="Model" OnValidSubmit="Submit" FormName="@FormName">
         <DataAnnotationsValidator />
-        <fieldset disabled="@(Disabled || uploading)">
+        <fieldset disabled="@(Disabled || uploading || personOperation)">
             <div class="row g-3">
                 <div class="col-12 col-lg-8">
                     <label class="form-label" for="admin-title">Title</label>
@@ -89,6 +89,7 @@
                         <ValidationMessage For="() => Model.GenreIds" />
                     </fieldset>
                 </div>
+                <div class="col-12"><AdminMovieCredits Model="Model" Busy="@(Disabled || Busy || uploading)" OperationChanged="value => personOperation = value" /></div>
                 <div class="col-12 d-flex flex-wrap gap-4">
                     <div class="form-check">
                         <InputCheckbox id="admin-featured" class="form-check-input" @bind-Value="Model.IsFeatured" />
@@ -119,7 +120,7 @@
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public EventCallback Submit { get; set; }
     [Parameter] public CancellationToken CancellationToken { get; set; }
-    private bool uploading;
+    private bool uploading, personOperation;
     private string? uploadError, uploadNotice;
     private string FormName => Editing ? "admin-edit-movie" : "admin-create-movie";
     private void ChangeGenre(int genreId, bool selected)

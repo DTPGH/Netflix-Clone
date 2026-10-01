@@ -11,18 +11,22 @@ public sealed record AdminMovieSummaryResponse(int MovieId, string Title, DateOn
 }
 
 public sealed record AdminMovieGenreResponse(int GenreId, string Name);
+public sealed record AdminPersonResponse(int PersonId, string FullName);
+public sealed record AdminPersonDetailResponse(int PersonId, string FullName, string? PhotoUrl, DateOnly? BirthDate);
+public sealed record AdminMovieCreditResponse(int PersonId, string FullName, string CreditType, string? CharacterName);
 
 public sealed record AdminMovieDetailResponse(int MovieId, string Title, string? Description, DateOnly? ReleaseDate,
     int DurationSeconds, string? ThumbnailUrl, string? BackdropUrl, string? TrailerUrl, string? VideoUrl,
     string MaturityRating, byte MinAge, bool IsFeatured, bool IsAvailable, bool IsDeleted, DateTime CreatedAtUtc,
-    DateTime UpdatedAtUtc, IReadOnlyList<AdminMovieGenreResponse> Genres)
+    DateTime UpdatedAtUtc, IReadOnlyList<AdminMovieGenreResponse> Genres, IReadOnlyList<AdminMovieCreditResponse> Credits)
 {
     public static AdminMovieDetailResponse From(AdminMovieDetail movie) => new(movie.MovieId, movie.Title,
         movie.Description, movie.ReleaseDate, movie.DurationSeconds, movie.ThumbnailUrl, movie.BackdropUrl,
         movie.TrailerUrl, movie.VideoUrl, movie.MaturityRating, movie.MinAge, movie.IsFeatured, movie.IsAvailable,
         movie.IsDeleted,
         movie.CreatedAtUtc, movie.UpdatedAtUtc,
-        movie.Genres.Select(genre => new AdminMovieGenreResponse(genre.GenreId, genre.Name)).ToArray());
+        movie.Genres.Select(genre => new AdminMovieGenreResponse(genre.GenreId, genre.Name)).ToArray(),
+        movie.Credits.Select(c => new AdminMovieCreditResponse(c.PersonId, c.FullName, c.CreditType, c.CharacterName)).ToArray());
 }
 
 public sealed record AdminMoviePageResponse(IReadOnlyList<AdminMovieSummaryResponse> Items,
