@@ -26,6 +26,8 @@ public static class DependencyInjection
         services.AddScoped<IUserAccountRepository, UserAccountRepository>();
         services.AddScoped<IMovieCatalogQueries, MovieCatalogQueries>();
         services.AddScoped<IAdminMovieRepository, AdminMovieRepository>();
+        services.AddScoped<IAdminPlanRepository, AdminPlanRepository>();
+        services.AddScoped<IAdminPlanMutationScopeFactory, AdminPlanMutationScopeFactory>();
         services.AddScoped<IAdminGenreRepository, AdminGenreRepository>();
         services.AddScoped<IAdminGenreMutationScopeFactory, AdminGenreMutationScopeFactory>();
         services.AddScoped<IAdminUserRepository, AdminUserRepository>();

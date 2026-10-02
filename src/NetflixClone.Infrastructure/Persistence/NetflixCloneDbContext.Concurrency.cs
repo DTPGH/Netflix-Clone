@@ -7,6 +7,12 @@ public partial class NetflixCloneDbContext
 {
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Plan>(entity =>
+        {
+            entity.Property(p => p.UpdatedAt).IsConcurrencyToken();
+            // The DB default is true; explicitly persist false for newly-created draft plans.
+            entity.Property(p => p.IsActive).HasSentinel(true);
+        });
         modelBuilder.Entity<MovieCollection>().Property(c => c.UpdatedAt).IsConcurrencyToken();
         modelBuilder.Entity<Movie>(entity =>
         {

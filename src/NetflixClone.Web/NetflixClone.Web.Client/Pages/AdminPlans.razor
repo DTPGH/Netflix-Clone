@@ -1,0 +1,129 @@
+@page "/admin/plans"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject AuthSession Session
+@inject AdminPlansApiClient Api
+<PageTitle>Admin plans · Netflix Clone</PageTitle>
+<AuthShell>
+    <div class="mb-4"><p class="eyebrow">SUBSCRIPTION CONFIGURATION</p><h1 class="display-5 fw-bold">Plans</h1>
+        <p class="text-muted">Prices are VND per month. New plans start inactive. Stream and quality limits are configuration for future playback enforcement.</p></div>
+    @if (!ready) { <p role="status">Checking administrator access…</p> }
+    else if (!isAdmin) { <p>Administrator access required.</p> }
+    else
+    {
+        @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+        @if (notice is not null) { <div class="alert alert-success" role="status">@notice</div> }
+        <div class="d-flex gap-3 mb-4">
+            <button class="btn btn-danger" disabled="@(busy || loading || needsReload)" @onclick="New">Add plan</button>
+            <button class="btn btn-outline-light" disabled="@(busy || loading)" @onclick="Load">Reload plans</button>
+        </div>
+        @if (editingForm)
+        {
+            <EditForm Model="form" OnValidSubmit="Save" FormName="admin-plan-form" class="auth-panel p-3 p-md-4 mb-4">
+                <DataAnnotationsValidator /><ValidationSummary />
+                <h2 class="h4">@(editing is null ? "Add plan" : $"Edit {editing.Name}")</h2>
+                @if (editing?.SubscriptionCount > 0) { <p class="text-warning">This plan has subscription history. Its configuration is preserved; create a new plan for different terms.</p> }
+                <fieldset disabled="@(busy || loading || needsReload || editing?.SubscriptionCount > 0)">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6"><label for="plan-name" class="form-label">Name</label>
+                            <InputText id="plan-name" class="form-control" maxlength="100" @bind-Value="form.Name" /></div>
+                        <div class="col-12 col-md-6"><label for="plan-price" class="form-label">Price (VND / month)</label>
+                            <InputNumber id="plan-price" class="form-control" step="0.01" @bind-Value="form.Price" /></div>
+                        <div class="col-12 col-md-6"><label for="plan-streams" class="form-label">Maximum concurrent streams</label>
+                            <InputNumber id="plan-streams" class="form-control" min="1" max="10" @bind-Value="form.MaxConcurrentStreams" /></div>
+                        <div class="col-12 col-md-6"><label for="plan-quality" class="form-label">Maximum quality</label>
+                            <InputSelect id="plan-quality" class="form-select" @bind-Value="form.MaxQuality"><option>480p</option><option>720p</option><option>1080p</option><option>4K</option></InputSelect></div>
+                    </div>
+                    <button type="submit" class="btn btn-danger mt-4">@(busy ? "Saving…" : "Save plan")</button>
+                </fieldset>
+                <button type="button" class="btn btn-outline-light mt-3" disabled="@busy" @onclick="() => editingForm = false">Close editor</button>
+            </EditForm>
+        }
+        @if (pending is not null)
+        {
+            <section class="auth-panel border-warning p-4 mb-4" aria-labelledby="plan-status-confirm">
+                <h2 id="plan-status-confirm" class="h4">@(pending.IsActive ? "Stop offering" : "Activate") @pending.Name?</h2>
+                <p>@(pending.IsActive ? "This stops new subscriptions. Existing subscriptions will remain unchanged." : "This makes the plan available for new subscriptions when checkout is implemented.")</p>
+                <div class="d-flex gap-3"><button class="btn btn-danger" disabled="@(busy || loading || needsReload)" @onclick="ChangeStatus">Confirm</button>
+                    <button class="btn btn-outline-light" disabled="@busy" @onclick="() => pending = null">Cancel</button></div>
+            </section>
+        }
+        @if (loading) { <p role="status">Loading plans…</p> }
+        else if (plans is not null)
+        {
+            @if (plans.Length == 0) { <p>No plans yet.</p> }
+            @foreach (var plan in plans)
+            {
+                <section class="auth-panel p-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-3" @key="plan.PlanId">
+                    <div><h2 class="h5">@plan.Name <span class="badge @(plan.IsActive ? "text-bg-success" : "text-bg-secondary")">@(plan.IsActive ? "Active" : "Inactive")</span></h2>
+                        <p class="mb-1">@plan.Price.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("vi-VN")) VND / month · @plan.MaxConcurrentStreams streams · @plan.MaxQuality</p>
+                        <p class="text-muted mb-0">@plan.SubscriptionCount subscriptions (all statuses)</p></div>
+                    <div class="d-flex flex-wrap gap-3">
+                        <button class="btn btn-outline-light" disabled="@(busy || needsReload)" @onclick="() => Edit(plan)">@(plan.SubscriptionCount > 0 ? "View configuration" : "Edit")</button>
+                        <button class="btn btn-outline-light" disabled="@(busy || needsReload)" @onclick="() => ReviewStatus(plan)">@(plan.IsActive ? "Deactivate" : "Activate")</button>
+                    </div>
+                </section>
+            }
+        }
+    }
+</AuthShell>
+@code {
+    private AdminPlan[]? plans;
+    private AdminPlan? editing, pending;
+    private AdminPlanForm form = new();
+    private string? error, notice;
+    private bool ready, isAdmin, loading, busy, needsReload, editingForm, disposed;
+    private int generation;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override async Task OnInitializedAsync() { Session.Changed += Changed; await Session.InitializeAsync(); await Access(); }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Access(); StateHasChanged(); } });
+    private async Task Access()
+    {
+        var allowed = Session.IsAuthenticated && (await Session.GetAuthenticationStateAsync()).User.IsInRole("Admin"); ready = true;
+        if (!allowed) { isAdmin = false; plans = null; editing = pending = null; form = new(); generation++; loading = busy = false; return; }
+        if (!isAdmin) { isAdmin = true; await Load(); }
+    }
+    private async Task Load()
+    {
+        if (!isAdmin || busy || disposed) return;
+        var version = ++generation; loading = true; error = null;
+        editing = pending = null; form = new(); editingForm = false;
+        var reply = await Api.ListAsync(lifetime.Token);
+        if (disposed || version != generation) return;
+        loading = false; plans = reply.Value; error = reply.Error; needsReload = !reply.Success;
+    }
+    private void New() { editing = pending = null; form = new(); editingForm = true; error = notice = null; }
+    private async Task Edit(AdminPlan plan)
+    {
+        if (busy || needsReload) return;
+        var version = generation; busy = true; error = notice = null; pending = null;
+        var reply = await Api.GetAsync(plan.PlanId, lifetime.Token);
+        if (disposed || version != generation) return;
+        busy = false;
+        if (!reply.Success) { error = reply.Error; needsReload = true; return; }
+        editing = reply.Value!; form = AdminPlanForm.From(editing); editingForm = true;
+    }
+    private void ReviewStatus(AdminPlan plan) { pending = plan; editingForm = false; error = notice = null; }
+    private bool MustReload<T>(ApiResult<T> result) => result.Code is "AdminPlans.ConcurrentChange" or "AdminPlans.InUse" || result.Status is 0 or 404 || result.Status >= 500;
+    private async Task Save()
+    {
+        if (!isAdmin || busy || loading || needsReload || editing?.SubscriptionCount > 0) return;
+        var version = generation; busy = true; error = notice = null;
+        var reply = await Api.SaveAsync(editing, form, lifetime.Token);
+        if (disposed || version != generation) return;
+        busy = false;
+        if (!reply.Success) { error = reply.Error; needsReload = MustReload(reply); return; }
+        await Load(); notice = "Plan saved. Activate a new plan when its configuration is ready.";
+    }
+    private async Task ChangeStatus()
+    {
+        if (!isAdmin || busy || loading || needsReload || pending is null) return;
+        var version = generation; busy = true; error = notice = null;
+        var reply = await Api.StatusAsync(pending, lifetime.Token);
+        if (disposed || version != generation) return;
+        busy = false; pending = null;
+        if (!reply.Success) { error = reply.Error; needsReload = MustReload(reply); return; }
+        await Load(); notice = "Plan availability updated. Existing subscriptions are unchanged.";
+    }
+    public void Dispose() { disposed = true; generation++; Session.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
+}
