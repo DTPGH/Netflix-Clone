@@ -19,6 +19,7 @@ builder.Services.AddScoped<WatchHistoryApiClient>();
 builder.Services.AddScoped<DevicesApiClient>();
 builder.Services.AddScoped<CatalogApiClient>();
 builder.Services.AddScoped<AdminMoviesApiClient>();
+builder.Services.AddScoped<AdminPlansApiClient>();
 builder.Services.AddScoped<AdminGenresApiClient>();
 builder.Services.AddScoped<AdminUsersApiClient>();
 builder.Services.AddScoped<CollectionsApiClient>();
