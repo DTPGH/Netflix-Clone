@@ -1,0 +1,112 @@
+@page "/admin/genres"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject AuthSession Session
+@inject AdminGenresApiClient Api
+<PageTitle>Manage genres · Netflix Clone</PageTitle>
+<AuthShell>
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div><p class="eyebrow">CONTENT ADMINISTRATION</p><h1 class="display-5 fw-bold">Genres</h1>
+            <p class="text-muted">Rename without changing movie links. Only unused genres can be deleted.</p></div>
+        <a class="btn btn-outline-light" href="/admin/movies">Back to movies</a>
+    </div>
+    @if (!ready) { <p role="status">Checking administrator access…</p> }
+    else if (!isAdmin) { <p>Administrator access required.</p> }
+    else
+    {
+        @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+        @if (notice is not null) { <div class="alert alert-success" role="status">@notice</div> }
+        <div class="d-flex flex-wrap gap-3 mb-4">
+            <button class="btn btn-danger" disabled="@(busy || loading || needsReload)" @onclick="New">Add genre</button>
+            <button class="btn btn-outline-light" disabled="@(busy || loading)" @onclick="Load">Reload genres</button>
+        </div>
+        @if (editingForm)
+        {
+            <EditForm Model="form" OnValidSubmit="Save" FormName="admin-genre-form" class="auth-panel p-3 p-md-4 mb-4">
+                <DataAnnotationsValidator /><ValidationSummary />
+                <fieldset disabled="@(busy || loading || needsReload)">
+                    <h2 class="h4">@(editing is null ? "Add genre" : "Rename genre")</h2>
+                    <label class="form-label" for="genre-name">Name</label>
+                    <InputText id="genre-name" class="form-control" maxlength="100" @bind-Value="form.Name" />
+                    <p class="form-text">Maximum 100 characters. Names must be unique.</p>
+                    <div class="d-flex gap-3 mt-3"><button class="btn btn-danger" type="submit">@(busy ? "Saving…" : "Save genre")</button>
+                        <button class="btn btn-outline-light" type="button" @onclick="() => editingForm = false">Cancel</button></div>
+                </fieldset>
+            </EditForm>
+        }
+        @if (deleting is not null)
+        {
+            <section class="auth-panel border-warning p-4 mb-4" aria-labelledby="delete-genre-title">
+                <h2 id="delete-genre-title" class="h4">Delete @deleting.Name?</h2>
+                <p>This permanently deletes the unused genre. Movies will not be deleted.</p>
+                <div class="d-flex gap-3"><button class="btn btn-danger" disabled="@(busy || loading || needsReload)" @onclick="Delete">Confirm delete</button>
+                    <button class="btn btn-outline-light" disabled="@busy" @onclick="() => deleting = null">Cancel</button></div>
+            </section>
+        }
+        @if (loading) { <p role="status">Loading genres…</p> }
+        else if (genres is not null)
+        {
+            @if (genres.Length == 0) { <p>No genres yet. Add the first genre above.</p> }
+            @foreach (var genre in genres)
+            {
+                <section class="auth-panel p-3 mb-3 d-flex flex-wrap justify-content-between align-items-center gap-3" @key="genre.GenreId">
+                    <div><h2 class="h5 mb-1">@genre.Name</h2><p class="text-muted mb-0">@genre.MovieCount linked movies (including soft-deleted movies)</p></div>
+                    <div class="d-flex gap-3">
+                        <button class="btn btn-outline-light" disabled="@(busy || needsReload)" @onclick="() => Edit(genre)">Rename</button>
+                        <button class="btn btn-outline-light" disabled="@(busy || needsReload || genre.MovieCount > 0)" @onclick="() => ReviewDelete(genre)">Delete</button>
+                    </div>
+                </section>
+            }
+        }
+    }
+</AuthShell>
+@code {
+    private AdminGenre[]? genres;
+    private AdminGenre? editing, deleting;
+    private AdminGenreForm form = new();
+    private string? error, notice;
+    private bool ready, isAdmin, loading, busy, needsReload, editingForm = true, disposed;
+    private int generation;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override async Task OnInitializedAsync() { Session.Changed += Changed; await Session.InitializeAsync(); await Access(); }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Access(); StateHasChanged(); } });
+    private async Task Access()
+    {
+        var allowed = Session.IsAuthenticated && (await Session.GetAuthenticationStateAsync()).User.IsInRole("Admin"); ready = true;
+        if (!allowed) { isAdmin = false; genres = null; editing = deleting = null; form = new(); generation++; loading = busy = false; return; }
+        if (!isAdmin) { isAdmin = true; await Load(); }
+    }
+    private async Task Load()
+    {
+        if (!isAdmin || busy || disposed) return;
+        var version = ++generation; loading = true; error = null;
+        editing = deleting = null; form = new(); editingForm = true;
+        var reply = await Api.ListAsync(lifetime.Token);
+        if (disposed || version != generation) return;
+        loading = false; genres = reply.Value; error = reply.Error; needsReload = !reply.Success;
+    }
+    private void New() { editing = deleting = null; form = new(); editingForm = true; error = notice = null; }
+    private void Edit(AdminGenre genre) { editing = genre; deleting = null; form = new() { Name = genre.Name }; editingForm = true; error = notice = null; }
+    private void ReviewDelete(AdminGenre genre) { deleting = genre; editingForm = false; error = notice = null; }
+    private async Task Save()
+    {
+        if (!isAdmin || busy || needsReload || loading) return;
+        var version = generation; busy = true; error = notice = null;
+        var reply = await Api.SaveAsync(editing, form.Name, lifetime.Token);
+        if (disposed || version != generation) return;
+        busy = false;
+        if (!reply.Success) { error = reply.Error; needsReload = reply.Code == "AdminGenres.ConcurrentChange" || reply.Status is 0 or 404 || reply.Status >= 500; return; }
+        await Load(); notice = "Genre saved. Movie links were preserved.";
+    }
+    private async Task Delete()
+    {
+        if (!isAdmin || busy || needsReload || loading || deleting is null) return;
+        var version = generation; busy = true; error = notice = null;
+        var reply = await Api.DeleteAsync(deleting, lifetime.Token);
+        if (disposed || version != generation) return;
+        busy = false;
+        if (!reply.Success) { error = reply.Error; needsReload = reply.Status is 0 or 404 or 409 || reply.Status >= 500; return; }
+        await Load(); notice = "Unused genre deleted.";
+    }
+    public void Dispose() { disposed = true; generation++; Session.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
+}
