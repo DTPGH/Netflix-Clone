@@ -37,6 +37,8 @@ public partial class Movie
 
     public DateTime UpdatedAt { get; set; }
 
+    public virtual ICollection<MovieCollectionItem> MovieCollectionItems { get; set; } = new List<MovieCollectionItem>();
+
     public virtual ICollection<MovieCredit> MovieCredits { get; set; } = new List<MovieCredit>();
 
     public virtual ICollection<MyListItem> MyListItems { get; set; } = new List<MyListItem>();

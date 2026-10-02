@@ -249,6 +249,40 @@ Table Movies {
   Note: 'Movie-only MVP. Admin deletion uses soft delete through IsDeleted so historical references are retained. IsAvailable controls whether non-deleted content can currently be watched and is separate from soft-delete state.'
 }
 
+Table MovieCollections {
+  Id int [pk, increment]
+  Title nvarchar(200) [not null]
+  IsPublished bit [not null, default: 0]
+  DisplayOrder int [not null, default: 0]
+  CreatedAt datetime2(7) [not null, default: `sysutcdatetime()`]
+  UpdatedAt datetime2(7) [not null, default: `sysutcdatetime()`]
+
+  Indexes {
+    (IsPublished, DisplayOrder, Id) [name: 'IX_MovieCollections_IsPublished_DisplayOrder']
+  }
+  Checks {
+    `LEN(LTRIM(RTRIM(Title))) > 0` [name: 'CK_MovieCollections_Title']
+    `DisplayOrder >= 0` [name: 'CK_MovieCollections_DisplayOrder']
+  }
+  Note: 'Admin-curated catalog collection, independent of recommendations and Movies.IsFeatured. Unpublished by default; duplicate titles and display orders are allowed. Display order is DisplayOrder then Id. UTC timestamps; Application must advance UpdatedAt on every collection or item mutation and configure it as a concurrency token. Publication requires at least one active movie; maximum 50 items is an Application rule. No scheduling or ranking calculation in MVP. Hard deletion removes items explicitly in the same transaction, never Movies.'
+}
+
+Table MovieCollectionItems {
+  CollectionId int [not null]
+  MovieId int [not null]
+  Position int [not null]
+
+  Indexes {
+    (CollectionId, MovieId) [pk, name: 'PK_MovieCollectionItems']
+    (CollectionId, Position, MovieId) [name: 'IX_MovieCollectionItems_CollectionId_Position']
+    MovieId [name: 'IX_MovieCollectionItems_MovieId']
+  }
+  Checks {
+    `Position >= 0` [name: 'CK_MovieCollectionItems_Position']
+  }
+  Note: 'A movie may belong to many collections, but only once per collection. Application derives consecutive zero-based Position values from ordered MovieIds. Position intentionally is not unique to allow multiple EF reorder updates in one commit; read order is Position then MovieId. References to soft-deleted Movies are retained for Admin review. Viewer queries filter Movies.IsDeleted and profile MaturityLevel, preserve item order, and omit empty collections. IsAvailable remains playback metadata. Foreign keys use NO ACTION.'
+}
+
 Table Genres {
   Id int [pk, increment]
   Name nvarchar(100) [not null, unique]
@@ -465,6 +499,8 @@ Ref: Subscriptions.PlanId > Plans.Id
 Ref: PaymentTransactions.SubscriptionId > Subscriptions.Id
 
 Ref: MovieGenres.MovieId > Movies.Id
+Ref: MovieCollectionItems.CollectionId > MovieCollections.Id [delete: no action]
+Ref: MovieCollectionItems.MovieId > Movies.Id [delete: no action]
 Ref: MovieGenres.GenreId > Genres.Id
 
 Ref: MovieCredits.MovieId > Movies.Id

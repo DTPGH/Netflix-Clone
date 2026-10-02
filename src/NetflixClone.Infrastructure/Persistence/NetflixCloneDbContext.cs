@@ -20,6 +20,10 @@ public partial class NetflixCloneDbContext : DbContext
 
     public virtual DbSet<Movie> Movies { get; set; }
 
+    public virtual DbSet<MovieCollection> MovieCollections { get; set; }
+
+    public virtual DbSet<MovieCollectionItem> MovieCollectionItems { get; set; }
+
     public virtual DbSet<MovieCredit> MovieCredits { get; set; }
 
     public virtual DbSet<MyListItem> MyListItems { get; set; }
@@ -149,6 +153,34 @@ public partial class NetflixCloneDbContext : DbContext
                         j.ToTable("MovieGenres");
                         j.HasIndex(new[] { "GenreId" }, "IX_MovieGenres_GenreId");
                     });
+        });
+
+        modelBuilder.Entity<MovieCollection>(entity =>
+        {
+            entity.HasIndex(e => new { e.IsPublished, e.DisplayOrder, e.Id }, "IX_MovieCollections_IsPublished_DisplayOrder");
+
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())", "DF_MovieCollections_CreatedAt");
+            entity.Property(e => e.Title).HasMaxLength(200);
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(sysutcdatetime())", "DF_MovieCollections_UpdatedAt");
+        });
+
+        modelBuilder.Entity<MovieCollectionItem>(entity =>
+        {
+            entity.HasKey(e => new { e.CollectionId, e.MovieId });
+
+            entity.HasIndex(e => new { e.CollectionId, e.Position, e.MovieId }, "IX_MovieCollectionItems_CollectionId_Position");
+
+            entity.HasIndex(e => e.MovieId, "IX_MovieCollectionItems_MovieId");
+
+            entity.HasOne(d => d.Collection).WithMany(p => p.MovieCollectionItems)
+                .HasForeignKey(d => d.CollectionId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_MovieCollectionItems_MovieCollections");
+
+            entity.HasOne(d => d.Movie).WithMany(p => p.MovieCollectionItems)
+                .HasForeignKey(d => d.MovieId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_MovieCollectionItems_Movies");
         });
 
         modelBuilder.Entity<MovieCredit>(entity =>
