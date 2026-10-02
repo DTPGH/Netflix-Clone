@@ -451,7 +451,7 @@ Table AdminActionLogs {
   Id int [pk, increment]
   ActorUserAccountId int [not null, note: 'Admin account that performed the action']
   TargetUserAccountId int [not null, note: 'User account affected by the Admin action']
-  Action nvarchar(50) [not null, note: 'Allowed MVP values: AccountLocked, AccountUnlocked']
+  Action nvarchar(50) [not null, note: 'Allowed MVP values: AccountLocked, AccountUnlocked, RoleAssigned, RoleRemoved']
   Reason nvarchar(500)
   CreatedAt datetime2 [not null, default: `sysdatetime()`]
 
@@ -463,10 +463,10 @@ Table AdminActionLogs {
   }
 
   Checks {
-    `Action IN ('AccountLocked', 'AccountUnlocked')` [name: 'CK_AdminActionLogs_Action']
+    `Action IN ('AccountLocked', 'AccountUnlocked', 'RoleAssigned', 'RoleRemoved')` [name: 'CK_AdminActionLogs_Action']
   }
 
-  Note: 'MVP audit trail for manual Admin account lock/unlock actions. It records who acted, which account was affected, what happened, why, and when. A broader future audit system may generalize this concept to Movies, Plans, Roles, and other administrative changes.'
+  Note: 'Append-only MVP audit trail for manual account lock/unlock and role assignment/removal. Records actor, target, action, reason and time. Each role delta has its own row; Reason includes the role name and administrator reason. A real mutation and its logs commit atomically; unchanged state creates no log. Application writes UTC CreatedAt. Failed/rejected requests are not recorded here; this is not a global security-event log.'
 }
 
 /*

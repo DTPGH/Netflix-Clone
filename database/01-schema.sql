@@ -325,7 +325,7 @@ CREATE TABLE [dbo].[AdminActionLogs] (
   [Action] nvarchar(50) NOT NULL,
   [Reason] nvarchar(500),
   [CreatedAt] datetime2 NOT NULL DEFAULT (sysdatetime()),
-  CONSTRAINT [CK_AdminActionLogs_Action] CHECK (Action IN ('AccountLocked', 'AccountUnlocked')),
+  CONSTRAINT [CK_AdminActionLogs_Action] CHECK (Action IN ('AccountLocked', 'AccountUnlocked', 'RoleAssigned', 'RoleRemoved')),
     CONSTRAINT [PK_AdminActionLogs] PRIMARY KEY ([Id])
 )
 GO

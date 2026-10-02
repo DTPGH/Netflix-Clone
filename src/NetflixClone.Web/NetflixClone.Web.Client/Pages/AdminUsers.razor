@@ -1,0 +1,71 @@
+@page "/admin/users"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject AuthSession Session
+@inject AdminUsersApiClient Api
+<PageTitle>Admin users · Netflix Clone</PageTitle>
+<AuthShell>
+    <div class="d-flex flex-wrap justify-content-between gap-3 mb-4"><div><p class="eyebrow">ACCOUNT ADMINISTRATION</p><h1 class="display-5 fw-bold">Users</h1></div>
+        <a class="btn btn-outline-light align-self-start" href="/admin/action-logs">Admin action logs</a></div>
+    @if (!ready) { <p role="status">Checking access…</p> }
+    else if (!isAdmin) { <p>Administrator access required.</p> }
+    else
+    {
+        <form @onsubmit="Apply" @onsubmit:preventDefault class="auth-panel p-3 mb-4">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-md-6"><label for="user-search" class="form-label">Email</label><input id="user-search" class="form-control" maxlength="100" @bind="search" /></div>
+                <div class="col-12 col-md-4"><label for="user-lock-filter" class="form-label">Manual lock</label><select id="user-lock-filter" class="form-select" @bind="locked"><option value="">All accounts</option><option value="true">Locked</option><option value="false">Unlocked</option></select></div>
+                <div class="col-12 col-md-2"><button class="btn btn-danger w-100" disabled="@loading">Search</button></div>
+            </div>
+        </form>
+        @if (error is not null) { <div class="alert alert-danger" role="alert">@error <button class="btn btn-outline-dark" @onclick="Load">Retry</button></div> }
+        @if (loading) { <p role="status">Loading users…</p> }
+        else if (result is not null)
+        {
+            @if (result.Items.Length == 0) { <p>No matching accounts.</p> }
+            @foreach (var user in result.Items)
+            {
+                <section class="auth-panel p-3 mb-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+                    <div class="text-break"><h2 class="h5">@user.Email</h2>
+                        <p class="text-muted mb-0">#@user.UserAccountId · @(user.EmailConfirmed ? "Email confirmed" : "Email not confirmed") · @(user.IsLocked ? "Manually locked" : "Unlocked")</p>
+                        <p class="mb-0">Roles: @string.Join(", ", user.Roles.Select(r => r.Name))</p></div>
+                    <a class="btn btn-outline-light" href="@($"/admin/users/{user.UserAccountId}")">Manage account</a>
+                </section>
+            }
+            <nav class="d-flex gap-3 justify-content-center align-items-center" aria-label="User pages">
+                <button class="btn btn-outline-light" disabled="@(page <= 1)" @onclick="Previous">Previous</button><span>Page @(page)</span>
+                <button class="btn btn-outline-light" disabled="@((long)page * 20 >= result.TotalCount)" @onclick="Next">Next</button>
+            </nav>
+        }
+    }
+</AuthShell>
+@code {
+    private string search = "", locked = "", appliedSearch = "";
+    private bool? appliedLock;
+    private bool ready, isAdmin, loading, disposed;
+    private int page = 1, generation;
+    private string? error;
+    private AdminUserPage? result;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override async Task OnInitializedAsync() { Session.Changed += Changed; await Session.InitializeAsync(); await Access(); }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Access(); StateHasChanged(); } });
+    private async Task Access()
+    {
+        var allowed = Session.IsAuthenticated && (await Session.GetAuthenticationStateAsync()).User.IsInRole("Admin");
+        ready = true;
+        if (!allowed) { isAdmin = false; result = null; generation++; loading = false; return; }
+        if (!isAdmin) { isAdmin = true; await Load(); }
+    }
+    private async Task Apply() { appliedSearch = search.Trim(); appliedLock = bool.TryParse(locked, out var value) ? value : null; page = 1; await Load(); }
+    private async Task Load()
+    {
+        if (!isAdmin || disposed) return;
+        var version = ++generation; loading = true; error = null;
+        var reply = await Api.ListAsync(page, appliedSearch, appliedLock, lifetime.Token);
+        if (disposed || version != generation) return;
+        loading = false; result = reply.Value; error = reply.Error;
+    }
+    private async Task Previous() { page--; await Load(); }
+    private async Task Next() { page++; await Load(); }
+    public void Dispose() { disposed = true; generation++; Session.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
+}

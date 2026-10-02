@@ -21,6 +21,7 @@
                         <NavLink class="nav-link" href="/devices">Devices</NavLink>
                         <AuthorizeView Roles="Admin" Context="adminContext">
                             <NavLink class="nav-link" href="/admin/movies">Admin movies</NavLink>
+                            <NavLink class="nav-link" href="/admin/users">Admin users</NavLink>
                             <NavLink class="nav-link" href="/admin/movie-collections">Admin collections</NavLink>
                         </AuthorizeView>
                         <button class="btn btn-outline-light" disabled="@Session.IsLoggingOut" @onclick="Logout">@(Session.IsLoggingOut ? "Signing out…" : "Sign out")</button>

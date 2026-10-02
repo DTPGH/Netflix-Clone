@@ -1,0 +1,77 @@
+@page "/admin/action-logs"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject AuthSession Session
+@inject AdminUsersApiClient Api
+<PageTitle>Admin action logs · Netflix Clone</PageTitle>
+<AuthShell>
+    <div class="d-flex flex-wrap justify-content-between gap-3 mb-4"><div><p class="eyebrow">ACCOUNT ADMINISTRATION</p><h1 class="display-5 fw-bold">Action logs</h1>
+        <p class="text-muted">Successful account lock/unlock and role changes, newest first.</p></div><a class="btn btn-outline-light align-self-start" href="/admin/users">Users</a></div>
+    @if (!ready) { <p role="status">Checking access…</p> }
+    else if (!isAdmin) { <p>Administrator access required.</p> }
+    else
+    {
+        <form @onsubmit="Apply" @onsubmit:preventDefault class="auth-panel p-3 mb-4">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-md-3"><label for="log-actor" class="form-label">Actor account ID</label><input id="log-actor" type="number" min="1" class="form-control" @bind="actor" /></div>
+                <div class="col-12 col-md-3"><label for="log-target" class="form-label">Target account ID</label><input id="log-target" type="number" min="1" class="form-control" @bind="target" /></div>
+                <div class="col-12 col-md-4"><label for="log-action" class="form-label">Action</label><select id="log-action" class="form-select" @bind="action">
+                    <option value="">All actions</option><option>AccountLocked</option><option>AccountUnlocked</option><option>RoleAssigned</option><option>RoleRemoved</option></select></div>
+                <div class="col-12 col-md-2"><button class="btn btn-danger w-100" disabled="@loading">Filter</button></div>
+            </div>
+        </form>
+        @if (error is not null) { <div class="alert alert-danger" role="alert">@error <button class="btn btn-outline-dark" @onclick="Load">Retry</button></div> }
+        @if (loading) { <p role="status">Loading audit logs…</p> }
+        else if (result is not null)
+        {
+            @if (result.Items.Length == 0) { <p>No matching audit records.</p> }
+            @foreach (var log in result.Items)
+            {
+                <article class="auth-panel p-3 mb-3">
+                    <div class="d-flex flex-wrap justify-content-between gap-2"><h2 class="h5">@Label(log.Action)</h2><time datetime="@log.CreatedAtUtc.ToString("O")">@log.CreatedAtUtc.ToLocalTime().ToString("g")</time></div>
+                    <p class="text-break mb-1">By @log.ActorEmail (#@log.ActorUserAccountId)</p>
+                    <p class="text-break mb-1">Account: <a href="@($"/admin/users/{log.TargetUserAccountId}")">@log.TargetEmail</a> (#@log.TargetUserAccountId)</p>
+                    <p class="text-break mb-0">Reason: @log.Reason</p>
+                </article>
+            }
+            <nav class="d-flex justify-content-center align-items-center gap-3" aria-label="Audit pages">
+                <button class="btn btn-outline-light" disabled="@(page <= 1)" @onclick="Previous">Previous</button><span>Page @(page)</span>
+                <button class="btn btn-outline-light" disabled="@((long)page * 20 >= result.TotalCount)" @onclick="Next">Next</button>
+            </nav>
+        }
+    }
+</AuthShell>
+@code {
+    [SupplyParameterFromQuery(Name = "targetId")] public int? TargetId { get; set; }
+    private int? actor, target, appliedActor, appliedTarget;
+    private int? loadedTargetQuery;
+    private int page = 1, generation;
+    private string action = "", appliedAction = "";
+    private string? error;
+    private bool ready, isAdmin, loading, disposed;
+    private AdminLogPage? result;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override async Task OnInitializedAsync() { loadedTargetQuery = target = appliedTarget = TargetId; Session.Changed += Changed; await Session.InitializeAsync(); await Access(); }
+    protected override async Task OnParametersSetAsync() { if (ready && loadedTargetQuery != TargetId) { loadedTargetQuery = target = appliedTarget = TargetId; page = 1; await Load(); } }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Access(); StateHasChanged(); } });
+    private async Task Access()
+    {
+        var allowed = Session.IsAuthenticated && (await Session.GetAuthenticationStateAsync()).User.IsInRole("Admin"); ready = true;
+        if (!allowed) { isAdmin = false; result = null; generation++; loading = false; return; }
+        if (!isAdmin) { isAdmin = true; await Load(); }
+    }
+    private async Task Apply() { appliedActor = actor; appliedTarget = target; appliedAction = action; page = 1; await Load(); }
+    private async Task Load()
+    {
+        if (!isAdmin || disposed) return;
+        var version = ++generation; loading = true; error = null;
+        var reply = await Api.LogsAsync(page, appliedActor, appliedTarget, appliedAction, lifetime.Token);
+        if (disposed || version != generation) return;
+        loading = false; result = reply.Value; error = reply.Error;
+    }
+    private async Task Previous() { page--; await Load(); }
+    private async Task Next() { page++; await Load(); }
+    private static string Label(string action) => action switch { "AccountLocked" => "Account locked", "AccountUnlocked" => "Account unlocked",
+        "RoleAssigned" => "Role assigned", "RoleRemoved" => "Role removed", _ => action };
+    public void Dispose() { disposed = true; generation++; Session.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
+}

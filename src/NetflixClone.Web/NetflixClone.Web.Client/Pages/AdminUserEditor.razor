@@ -1,0 +1,119 @@
+@page "/admin/users/{UserId:int}"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject AuthSession Session
+@inject AdminUsersApiClient Api
+<PageTitle>Manage account · Netflix Clone</PageTitle>
+<AuthShell>
+    <div class="d-flex flex-wrap justify-content-between gap-3 mb-4"><h1 class="display-5 fw-bold">Manage account</h1>
+        <a class="btn btn-outline-light align-self-start" href="/admin/users">Back to users</a></div>
+    @if (!ready || loading) { <p role="status">Loading account…</p> }
+    else if (!isAdmin) { <p>Administrator access required.</p> }
+    else
+    {
+        @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+        @if (notice is not null) { <div class="alert alert-success" role="status">@notice</div> }
+        <button class="btn btn-outline-light mb-3" disabled="@busy" @onclick="Load">Reload account</button>
+        @if (user is not null)
+        {
+            <section class="auth-panel p-3 p-md-4 mb-4">
+                <h2 class="h4 text-break">@user.Email</h2>
+                <p class="text-muted">#@user.UserAccountId · @(user.EmailConfirmed ? "Email confirmed" : "Email not confirmed") · @(user.IsLocked ? "Manually locked" : "Unlocked")</p>
+                <p class="mb-0">This changes the manual account lock only. Temporary password lockout stays separate.</p>
+                <a class="btn btn-link px-0" href="@($"/admin/action-logs?targetId={user.UserAccountId}")">View account audit history</a>
+            </section>
+            <EditForm Model="form" OnValidSubmit="ReviewRoles" FormName="admin-user-roles" class="auth-panel p-3 p-md-4">
+                <DataAnnotationsValidator /><ValidationSummary />
+                <fieldset disabled="@(busy || needsReload || pending is not null)">
+                    <h2 class="h4">Assigned roles</h2>
+                    @foreach (var role in roles)
+                    {
+                        <div class="form-check mb-2"><input id="@($"user-role-{role.RoleId}")" class="form-check-input" type="checkbox"
+                            checked="@form.RoleIds.Contains(role.RoleId)" disabled="@(isSelf && role.Name == "Admin")" @onchange="e => Toggle(role.RoleId, e.Value is true)" />
+                            <label class="form-check-label" for="@($"user-role-{role.RoleId}")">@role.Name</label></div>
+                    }
+                    <label for="user-change-reason" class="form-label mt-3">Reason for this change</label>
+                    <InputTextArea id="user-change-reason" class="form-control" maxlength="400" @bind-Value="form.Reason" />
+                    <p class="form-text">Required for roles and lock changes. Keep passwords, tokens and other secrets out of the reason.</p>
+                    <div class="d-flex flex-wrap gap-3 mt-3">
+                        <button type="submit" class="btn btn-danger">Review role changes</button>
+                        <button type="button" class="btn btn-outline-light" disabled="@(isSelf && !user.IsLocked)" @onclick="ReviewLock">@(user.IsLocked ? "Review unlock" : "Review lock")</button>
+                    </div>
+                </fieldset>
+            </EditForm>
+            @if (pending is not null)
+            {
+                <section class="auth-panel border-warning p-4 mt-4" aria-labelledby="confirm-account-action">
+                    <h2 id="confirm-account-action" class="h4">Confirm account change</h2>
+                    <p class="text-break">@user.Email</p><p>@pendingDescription</p>
+                    <p class="text-break">Reason: @form.Reason</p>
+                    <div class="d-flex gap-3"><button class="btn btn-danger" disabled="@busy" @onclick="Confirm">@(busy ? "Saving…" : "Confirm change")</button>
+                        <button class="btn btn-outline-light" disabled="@busy" @onclick="() => pending = null">Cancel</button></div>
+                </section>
+            }
+            <p class="text-muted mt-3">Existing access tokens keep their claims until expiry. Current Admin permissions are checked by the backend; newly issued tokens contain the updated roles.</p>
+        }
+    }
+</AuthShell>
+@code {
+    [Parameter] public int UserId { get; set; }
+    private AdminUser? user;
+    private AdminUserRole[] roles = [];
+    private AdminUserChangeForm form = new();
+    private string? error, notice, pending, pendingDescription;
+    private bool ready, isAdmin, isSelf, loading, busy, needsReload, disposed;
+    private int generation, loadedId;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override async Task OnInitializedAsync() { Session.Changed += Changed; await Session.InitializeAsync(); await Access(); }
+    protected override async Task OnParametersSetAsync() { if (ready && isAdmin && loadedId != UserId) await Load(); }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Access(); StateHasChanged(); } });
+    private async Task Access()
+    {
+        var state = await Session.GetAuthenticationStateAsync();
+        var allowed = Session.IsAuthenticated && state.User.IsInRole("Admin"); ready = true;
+        isSelf = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value == UserId.ToString();
+        if (!allowed) { isAdmin = false; user = null; pending = null; generation++; loading = busy = false; return; }
+        if (!isAdmin) { isAdmin = true; await Load(); }
+    }
+    private async Task Load()
+    {
+        if (!isAdmin || busy || disposed) return;
+        loadedId = UserId; var version = ++generation; loading = true; user = null; error = notice = pending = null; needsReload = false;
+        var roleReply = await Api.RolesAsync(lifetime.Token);
+        if (disposed || version != generation) return;
+        if (!roleReply.Success) { loading = false; error = roleReply.Error; return; }
+        roles = roleReply.Value!;
+        var reply = await Api.GetAsync(UserId, lifetime.Token);
+        if (disposed || version != generation) return;
+        loading = false; user = reply.Value; error = reply.Error;
+        ResetForm();
+        var state = await Session.GetAuthenticationStateAsync();
+        isSelf = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value == UserId.ToString();
+    }
+    private void ResetForm() { form = new(); if (user is not null) form.RoleIds.UnionWith(user.Roles.Select(r => r.RoleId)); }
+    private void Toggle(int id, bool selected) { if (selected) form.RoleIds.Add(id); else form.RoleIds.Remove(id); }
+    private void ReviewRoles()
+    {
+        if (user is null || busy || needsReload) return;
+        if (form.RoleIds.SetEquals(user.Roles.Select(r => r.RoleId))) { notice = "Roles are unchanged."; return; }
+        pending = "roles"; pendingDescription = "Replace assigned roles with: " + string.Join(", ", roles.Where(r => form.RoleIds.Contains(r.RoleId)).Select(r => r.Name));
+    }
+    private void ReviewLock()
+    {
+        if (user is null || busy || needsReload) return;
+        if (string.IsNullOrWhiteSpace(form.Reason) || form.Reason.Trim().Length > 400) { error = "Enter a reason (maximum 400 characters)."; return; }
+        pending = "lock"; pendingDescription = user.IsLocked ? "Unlock this account." : "Lock this account. Login and refresh will be rejected.";
+    }
+    private async Task Confirm()
+    {
+        if (user is null || pending is null || busy || needsReload || !isAdmin) return;
+        var version = generation; busy = true; error = notice = null;
+        var reply = pending == "roles" ? await Api.ChangeRolesAsync(user, form.RoleIds.Order().ToArray(), form.Reason.Trim(), lifetime.Token)
+            : await Api.LockAsync(user, !user.IsLocked, form.Reason.Trim(), lifetime.Token);
+        if (disposed || version != generation) return;
+        busy = false; pending = null;
+        if (!reply.Success) { error = reply.Error; needsReload = reply.Status is 0 or 404 or 409 || reply.Status >= 500; return; }
+        user = reply.Value!; ResetForm(); notice = "Account updated and audit log saved.";
+    }
+    public void Dispose() { disposed = true; generation++; Session.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
+}
