@@ -1,0 +1,61 @@
+@implements IDisposable
+@inject CollectionsApiClient Api
+@inject AuthSession Session
+@inject ActiveProfileState Active
+
+@if (Session.IsAuthenticated && Active.Selected is not null)
+{
+    @if (loading) { <p role="status">Loading collections…</p> }
+    else if (error is not null)
+    {
+        <div class="mb-4"><p class="text-warning" role="alert">@error</p><button class="btn btn-outline-light" @onclick="Load">Retry collections</button></div>
+    }
+    else if (collections is not null)
+    {
+        @foreach (var collection in collections)
+        {
+            <section class="mb-5" aria-labelledby="@($"collection-heading-{collection.CollectionId}")" @key="collection.CollectionId">
+                <h2 id="@($"collection-heading-{collection.CollectionId}")" class="h3 mb-3">@collection.Title</h2>
+                <div class="row flex-nowrap overflow-auto g-3 pb-3">
+                    @foreach (var movie in collection.Movies)
+                    {
+                        <div class="col-6 col-md-3 col-lg-2 flex-shrink-0" @key="movie.MovieId">
+                            <a class="movie-card d-block h-100 text-decoration-none" href="@($"/movies/{movie.MovieId}")">
+                                <CatalogImage Src="@movie.ThumbnailUrl" Alt="@($"{movie.Title} poster")" CssClass="movie-poster" />
+                                <div class="p-3"><h3 class="h6">@movie.Title</h3><p class="small text-muted mb-0">@movie.ReleaseDate?.Year · @movie.MaturityRating</p>
+                                    @if (!movie.IsAvailable) { <span class="small text-muted">Currently unavailable</span> }</div>
+                            </a>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+    }
+}
+@code {
+    private BrowseCollection[]? collections;
+    private string? error;
+    private bool loading, disposed;
+    private long generation;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override async Task OnInitializedAsync()
+    {
+        Active.Changed += Changed; Session.Changed += Changed;
+        await Active.InitializeAsync();
+        await Load();
+    }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Load(); StateHasChanged(); } });
+    private async Task Load()
+    {
+        var request = ++generation; var profileVersion = Active.Version; var profile = Active.Selected;
+        collections = null; error = null; loading = false;
+        if (!Session.IsAuthenticated || profile is null) return;
+        loading = true;
+        var result = await Api.BrowseAsync(profile.ProfileId, lifetime.Token);
+        if (disposed || request != generation || profileVersion != Active.Version) return;
+        loading = false;
+        if (result.Status == 404) { Active.InvalidateIfCurrent(profile.ProfileId, profileVersion); return; }
+        collections = result.Value; error = result.Error;
+    }
+    public void Dispose() { disposed = true; generation++; Active.Changed -= Changed; Session.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
+}

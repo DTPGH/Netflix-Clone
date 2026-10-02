@@ -1,0 +1,149 @@
+@page "/admin/movie-collections/new"
+@page "/admin/movie-collections/{CollectionId:int}/edit"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject AuthSession Session
+@inject CollectionsApiClient Api
+@inject AdminMoviesApiClient MoviesApi
+@inject NavigationManager Navigation
+<PageTitle>Collection editor · Netflix Clone</PageTitle>
+<AuthShell>
+    <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
+        <h1 class="display-5 fw-bold">@(CollectionId.HasValue ? "Edit collection" : "Create collection")</h1>
+        <a class="btn btn-outline-light align-self-start" href="/admin/movie-collections">Back to collections</a>
+    </div>
+    @if (!ready || loading) { <p role="status">Loading editor…</p> }
+    else if (!isAdmin) { <p>Administrator access required.</p> }
+    else
+    {
+        @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+        @if (notice is not null) { <div class="alert alert-success" role="status">@notice</div> }
+        @if (needsReload) { <button class="btn btn-outline-light mb-3" disabled="@busy" @onclick="Load">Reload editor</button> }
+        @if (form is not null)
+        {
+            <EditForm Model="form" OnValidSubmit="Save" FormName="collection-editor" class="auth-panel p-3 p-md-4">
+                <DataAnnotationsValidator /><ValidationSummary />
+                <fieldset disabled="@(busy || needsReload)">
+                    <div class="row g-3 mb-4">
+                        <div class="col-12 col-md-8"><label for="collection-title" class="form-label">Title</label>
+                            <InputText id="collection-title" class="form-control" maxlength="200" @bind-Value="form.Title" /></div>
+                        <div class="col-12 col-md-4"><label for="collection-order" class="form-label">Display order</label>
+                            <InputNumber id="collection-order" class="form-control" @bind-Value="form.DisplayOrder" /></div>
+                        <div class="col-12"><div class="form-check"><InputCheckbox id="collection-published" class="form-check-input" @bind-Value="form.IsPublished" />
+                            <label class="form-check-label" for="collection-published">Show on Browse</label></div>
+                            <p class="form-text">A published collection needs at least one active movie. Movies are filtered for each profile.</p></div>
+                    </div>
+                    <h2 class="h4">Selected movies (@form.Movies.Count / 50)</h2>
+                    @if (form.Movies.Count == 0) { <p class="text-muted">Search below to add movies.</p> }
+                    @for (var i = 0; i < form.Movies.Count; i++)
+                    {
+                        var index = i; var movie = form.Movies[i];
+                        <div @key="movie.MovieId" class="border-bottom py-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+                            <div><span class="fw-semibold">@(index + 1). @movie.Title</span>
+                                @if (movie.IsDeleted) { <span class="badge text-bg-warning ms-2">Soft-deleted · excluded from Browse</span> }</div>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-outline-light" disabled="@(index == 0)" @onclick="() => Move(index, -1)" aria-label="@($"Move {movie.Title} up")">Up</button>
+                                <button type="button" class="btn btn-outline-light" disabled="@(index == form.Movies.Count - 1)" @onclick="() => Move(index, 1)" aria-label="@($"Move {movie.Title} down")">Down</button>
+                                <button type="button" class="btn btn-outline-light" @onclick="() => form.Movies.Remove(movie)">Remove</button>
+                            </div>
+                        </div>
+                    }
+                    <section class="mt-4" aria-label="Find movies">
+                        <h2 class="h4">Add movies</h2>
+                        <div class="d-flex flex-wrap gap-2"><div class="flex-grow-1"><label for="collection-search" class="form-label">Movie title</label>
+                            <input id="collection-search" class="form-control" maxlength="100" @bind="search" /></div>
+                            <button type="button" class="btn btn-outline-light align-self-end" disabled="@searching" @onclick="Search">Search</button></div>
+                        @if (searchError is not null) { <p class="text-danger mt-2" role="alert">@searchError</p> }
+                        @if (searching) { <p role="status">Searching movies…</p> }
+                        else if (matches is not null)
+                        {
+                            @if (matches.Items.Length == 0) { <p class="text-muted mt-3">No active movies found.</p> }
+                            @foreach (var movie in matches.Items)
+                            {
+                                <div class="d-flex justify-content-between align-items-center gap-3 py-2">
+                                    <span>@movie.Title <span class="text-muted">(@movie.ReleaseDate?.Year)</span></span>
+                                    <button type="button" class="btn btn-outline-light" disabled="@(form.Movies.Count >= 50 || form.Movies.Any(m => m.MovieId == movie.MovieId))" @onclick="() => Add(movie)">Add</button>
+                                </div>
+                            }
+                            <div class="d-flex gap-3 align-items-center mt-2">
+                                <button type="button" class="btn btn-outline-light" disabled="@(searchPage == 1)" @onclick="PreviousMatches">Previous</button>
+                                <span>Page @searchPage</span>
+                                <button type="button" class="btn btn-outline-light" disabled="@((long)searchPage * 20 >= matches.TotalCount)" @onclick="NextMatches">Next</button>
+                            </div>
+                        }
+                    </section>
+                    <button type="submit" class="btn btn-danger mt-4" disabled="@searching">@(busy ? "Saving…" : "Save collection")</button>
+                </fieldset>
+            </EditForm>
+        }
+    }
+</AuthShell>
+@code {
+    [Parameter] public int? CollectionId { get; set; }
+    private CollectionForm? form;
+    private CollectionDetail? detail;
+    private AdminMoviesReply? matches;
+    private string search = "", appliedSearch = "";
+    private string? error, notice, searchError;
+    private int searchPage = 1, generation, searchGeneration;
+    private int? loadedId;
+    private bool ready, isAdmin, loading, busy, searching, needsReload, disposed;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override async Task OnInitializedAsync() { Session.Changed += Changed; await Session.InitializeAsync(); await Access(); }
+    protected override async Task OnParametersSetAsync() { if (ready && isAdmin && loadedId != CollectionId) await Load(); }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Access(); StateHasChanged(); } });
+    private async Task Access()
+    {
+        var allowed = Session.IsAuthenticated && (await Session.GetAuthenticationStateAsync()).User.IsInRole("Admin");
+        ready = true;
+        if (!allowed) { isAdmin = false; form = null; detail = null; matches = null; generation++; searchGeneration++; loading = busy = searching = false; return; }
+        if (!isAdmin) { isAdmin = true; await Load(); }
+    }
+    private async Task Load()
+    {
+        if (!isAdmin || busy || disposed) return;
+        var version = ++generation; searchGeneration++; loadedId = CollectionId;
+        loading = true; searching = false; form = null; matches = null; error = notice = searchError = null; needsReload = false;
+        if (CollectionId is not { } id) { detail = null; form = new(); loading = false; return; }
+        var reply = await Api.GetAsync(id, lifetime.Token);
+        if (disposed || version != generation) return;
+        loading = false; detail = reply.Value; error = reply.Error;
+        form = detail is null ? null : CollectionForm.From(detail);
+        needsReload = !reply.Success;
+    }
+    private void Move(int index, int offset)
+    {
+        if (busy || needsReload || form is null) return;
+        var destination = index + offset;
+        if (destination < 0 || destination >= form.Movies.Count) return;
+        (form.Movies[index], form.Movies[destination]) = (form.Movies[destination], form.Movies[index]);
+    }
+    private void Add(AdminMovieCard movie)
+    {
+        if (busy || needsReload || form is null || form.Movies.Count >= 50 || form.Movies.Any(m => m.MovieId == movie.MovieId)) return;
+        form.Movies.Add(new(movie.MovieId, movie.Title, movie.ThumbnailUrl, movie.IsDeleted));
+    }
+    private async Task Search() { appliedSearch = search.Trim(); searchPage = 1; await Find(); }
+    private async Task PreviousMatches() { searchPage--; await Find(); }
+    private async Task NextMatches() { searchPage++; await Find(); }
+    private async Task Find()
+    {
+        if (busy || needsReload || disposed || !isAdmin) return;
+        var version = ++searchGeneration; searching = true; searchError = null;
+        var reply = await MoviesApi.ListAsync(searchPage, appliedSearch, null, null, "active", lifetime.Token);
+        if (disposed || version != searchGeneration) return;
+        searching = false; matches = reply.Value; searchError = reply.Error;
+    }
+    private async Task Save()
+    {
+        if (busy || searching || needsReload || form is null || !isAdmin) return;
+        var version = generation; busy = true; error = notice = null;
+        var reply = await Api.SaveAsync(CollectionId, form.Payload(detail?.UpdatedAtUtc), lifetime.Token);
+        if (disposed || version != generation) return;
+        busy = false;
+        if (!reply.Success) { error = reply.Error; needsReload = reply.Status is 404 or 409 or 0 || reply.Status >= 500; return; }
+        if (!CollectionId.HasValue) { Navigation.NavigateTo($"/admin/movie-collections/{reply.Value!.CollectionId}/edit"); return; }
+        detail = reply.Value!; form = CollectionForm.From(detail); notice = "Collection saved.";
+    }
+    public void Dispose() { disposed = true; generation++; searchGeneration++; Session.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
+}

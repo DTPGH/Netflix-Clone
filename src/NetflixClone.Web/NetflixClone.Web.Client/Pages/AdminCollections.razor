@@ -1,0 +1,64 @@
+@page "/admin/movie-collections"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject AuthSession Session
+@inject CollectionsApiClient Api
+<PageTitle>Admin collections · Netflix Clone</PageTitle>
+<AuthShell>
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div><p class="eyebrow">CONTENT ADMINISTRATION</p><h1 class="display-5 fw-bold">Movie collections</h1>
+            <p class="text-muted">Curate movie rows on Browse. Lower display orders appear first.</p></div>
+        @if (isAdmin) { <a class="btn btn-danger" href="/admin/movie-collections/new">Create collection</a> }
+    </div>
+    @if (!ready) { <p role="status">Checking access…</p> }
+    else if (!isAdmin) { <p>Administrator access required.</p> }
+    else
+    {
+        @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+        <button class="btn btn-outline-light mb-3" disabled="@loading" @onclick="Load">Reload list</button>
+        @if (loading) { <p role="status">Loading collections…</p> }
+        else if (result is not null)
+        {
+            @if (result.Items.Length == 0) { <p>No collections yet.</p> }
+            @foreach (var collection in result.Items)
+            {
+                <section class="auth-panel p-3 mb-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+                    <div><h2 class="h5">@collection.Title</h2><p class="text-muted mb-0">@(collection.IsPublished ? "Published" : "Hidden") · @collection.MovieCount movies · Order @collection.DisplayOrder</p></div>
+                    <a class="btn btn-outline-light" href="@($"/admin/movie-collections/{collection.CollectionId}/edit")">Edit collection</a>
+                </section>
+            }
+            <nav class="d-flex justify-content-center align-items-center gap-3" aria-label="Collection pages">
+                <button class="btn btn-outline-light" disabled="@(page <= 1)" @onclick="Previous">Previous</button>
+                <span>Page @(page)</span>
+                <button class="btn btn-outline-light" disabled="@((long)page * 20 >= result.TotalCount)" @onclick="Next">Next</button>
+            </nav>
+        }
+    }
+</AuthShell>
+@code {
+    private bool ready, isAdmin, loading, disposed;
+    private int page = 1, generation;
+    private string? error;
+    private CollectionPage? result;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override async Task OnInitializedAsync() { Session.Changed += Changed; await Session.InitializeAsync(); await Access(); }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Access(); StateHasChanged(); } });
+    private async Task Access()
+    {
+        var allowed = Session.IsAuthenticated && (await Session.GetAuthenticationStateAsync()).User.IsInRole("Admin");
+        ready = true;
+        if (!allowed) { isAdmin = false; result = null; generation++; loading = false; return; }
+        if (!isAdmin) { isAdmin = true; await Load(); }
+    }
+    private async Task Load()
+    {
+        if (!isAdmin || disposed) return;
+        var version = ++generation; loading = true; error = null;
+        var reply = await Api.ListAsync(page, lifetime.Token);
+        if (disposed || version != generation) return;
+        loading = false; result = reply.Value; error = reply.Error;
+    }
+    private async Task Previous() { page--; await Load(); }
+    private async Task Next() { page++; await Load(); }
+    public void Dispose() { disposed = true; generation++; Session.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
+}

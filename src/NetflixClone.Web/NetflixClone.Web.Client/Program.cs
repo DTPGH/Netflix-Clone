@@ -19,6 +19,7 @@ builder.Services.AddScoped<WatchHistoryApiClient>();
 builder.Services.AddScoped<DevicesApiClient>();
 builder.Services.AddScoped<CatalogApiClient>();
 builder.Services.AddScoped<AdminMoviesApiClient>();
+builder.Services.AddScoped<CollectionsApiClient>();
 builder.Services.AddScoped(_ => new AdminMediaUploadTransport(apiUri));
 builder.Services.AddScoped<ICredentialStore, BrowserCredentialStore>();
 builder.Services.AddScoped<AuthSession>();
