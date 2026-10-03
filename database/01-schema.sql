@@ -306,10 +306,15 @@ CREATE TABLE [dbo].[ViewingSessions] (
   [StartedAt] datetime2 NOT NULL DEFAULT (sysdatetime()),
   [EndedAt] datetime2,
   [WatchedSeconds] int NOT NULL DEFAULT (0),
+  [ClientSessionId] uniqueidentifier NULL,
+  [CheckpointSequence] bigint NOT NULL DEFAULT (0),
+  [WatchedMilliseconds] bigint NOT NULL DEFAULT (0),
+  [LastCheckpointAtUtc] datetime2 NOT NULL DEFAULT (SYSUTCDATETIME()),
   [IsQualifiedView] bit NOT NULL DEFAULT (0),
   [Quality] nvarchar(20),
   [EndReason] nvarchar(30),
   CONSTRAINT [CK_ViewingSessions_WatchedSeconds] CHECK (WatchedSeconds >= 0),
+  CONSTRAINT [CK_ViewingSessions_Checkpoint] CHECK (CheckpointSequence >= 0 AND WatchedMilliseconds >= 0 AND WatchedSeconds = WatchedMilliseconds / 1000),
   CONSTRAINT [CK_ViewingSessions_TimeRange] CHECK (EndedAt IS NULL OR EndedAt >= StartedAt),
   CONSTRAINT [CK_ViewingSessions_QualifiedView] CHECK (IsQualifiedView = 0 OR WatchedSeconds >= 120),
   CONSTRAINT [CK_ViewingSessions_EndReason] CHECK (EndReason IS NULL OR EndReason IN ('Finished', 'Closed', 'Timeout')),
@@ -457,6 +462,8 @@ CREATE INDEX [IX_ViewingSessions_Movie_QualifiedView] ON [dbo].[ViewingSessions]
 GO
 
 CREATE INDEX [IX_ViewingSessions_StartedAt] ON [dbo].[ViewingSessions] ("StartedAt")
+GO
+CREATE UNIQUE INDEX [UX_ViewingSessions_Device_ClientSession] ON [dbo].[ViewingSessions] ([DeviceId], [ClientSessionId]) WHERE [ClientSessionId] IS NOT NULL
 GO
 
 CREATE INDEX [IX_AdminActionLogs_ActorUserAccountId] ON [dbo].[AdminActionLogs] ("ActorUserAccountId")

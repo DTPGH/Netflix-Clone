@@ -1,11 +1,14 @@
+import { createViewingTracker } from "./viewing-session.js";
 // Keep a reference until explicit cleanup, even if Blazor has detached the element.
 const states = new Map();
-export function stop(video, id, preserveProgress = false) {
+export async function stop(video, id, preserveProgress = false) {
     const state = states.get(id);
     video = state?.video ?? video;
     if (!video) return;
     if (state) {
         clearTimeout(state.timer);
+        if (preserveProgress) state.viewing.detach();
+        else await state.viewing.close();
         video.removeEventListener("error", state.error);
         video.removeEventListener("loadedmetadata", state.metadata);
         video.removeEventListener("playing", state.playing);
@@ -20,17 +23,19 @@ export function stop(video, id, preserveProgress = false) {
     video.removeAttribute("src");
     video.load();
 }
-export function setSource(video, url, expiresAt, owner, version, id, resumeSeconds = 0) {
+export async function setSource(video, url, expiresAt, owner, version, id, resumeSeconds = 0) {
     const old = states.get(id);
     const wasEnded = old && video.ended;
     const position = wasEnded ? 0 : old && Number.isFinite(video.currentTime) ? video.currentTime : resumeSeconds;
     const resume = old && !video.paused && !video.ended;
-    stop(video, id, true);
+    await stop(video, id, true);
     const expires = Date.parse(expiresAt);
     const progress = old?.progress ?? { played: false, cancelled: false, pending: null, flight: null, last: Date.now() };
     // Renewing an ended source must not turn a passive pause/flush into a replay checkpoint.
     if (wasEnded) progress.played = false;
     const state = { video, progress, ready: false, renewing: false, timer: null, metadata: null, error: null, visible: null };
+    state.viewing = old?.viewing ?? createViewingTracker(video, owner, version);
+    if (old) state.viewing.attach();
     state.report = () => {
         if (!state.ready || !progress.played || progress.cancelled || !Number.isFinite(video.duration) ||
             video.duration <= 0 || video.duration > 86400 || !Number.isFinite(video.currentTime))
@@ -89,4 +94,8 @@ export function setSource(video, url, expiresAt, owner, version, id, resumeSecon
 export async function flush(id) {
     const state = states.get(id);
     if (state) await state.report();
+}
+export async function closeViewing(id) {
+    const state = states.get(id);
+    if (state) await state.viewing.close();
 }

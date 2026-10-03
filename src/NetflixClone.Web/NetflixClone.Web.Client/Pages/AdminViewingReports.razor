@@ -1,0 +1,134 @@
+@page "/admin/reports/views"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IAsyncDisposable
+@inject AuthSession Session
+@inject AdminViewingReportsApiClient Api
+@inject IJSRuntime JS
+<PageTitle>Viewing report · Netflix Clone</PageTitle>
+<AuthShell>
+    <div class="mb-4"><p class="eyebrow">ADMIN REPORTS</p><h1 class="display-5 fw-bold">Viewing report</h1>
+        <p class="text-muted">A qualified view means at least 120 recorded seconds in one playback session. These numbers currently represent demo footage.</p></div>
+    @if (!ready) { <p role="status">Checking administrator access…</p> }
+    else if (!isAdmin) { <p>Administrator access required.</p> }
+    else
+    {
+        <EditForm Model="filter" OnValidSubmit="Apply" FormName="viewing-report-filter" class="auth-panel p-3 p-md-4 mb-4">
+            <ValidationSummary />
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-sm-4"><label for="report-from" class="form-label">From date</label><InputDate id="report-from" class="form-control" DisplayName="From date" disabled="@(loading || exporting)" @bind-Value="filter.From" /></div>
+                <div class="col-12 col-sm-4"><label for="report-to" class="form-label">Through date</label><InputDate id="report-to" class="form-control" DisplayName="Through date" disabled="@(loading || exporting)" @bind-Value="filter.To" /></div>
+                <div class="col-12 col-sm-4"><button class="btn btn-danger w-100" type="submit" disabled="@(loading || exporting)">@(loading ? "Loading…" : "Show report")</button></div>
+            </div>
+            <p class="small text-muted mb-0 mt-3">Dates use Vietnam time (UTC+7), including both selected days. Maximum 366 days.</p>
+        </EditForm>
+        @if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+        @if (notice is not null) { <p role="status">@notice</p> }
+        @if (loading) { <p role="status">Loading viewing report…</p> }
+        @if (report is not null)
+        {
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+                <div><h2 class="h4 mb-1">@LocalDate(report.FromUtc) – @LocalDate(report.ToUtc.AddTicks(-1))</h2>
+                    <p class="small text-muted mb-0">Generated @report.GeneratedAtUtc.AddHours(7).ToString("dd MMM yyyy HH:mm") (UTC+7). Live totals can change.</p></div>
+                <button class="btn btn-outline-light" disabled="@(loading || exporting)" @onclick="Export">@(exporting ? "Preparing Excel…" : "Export Excel · all movies")</button>
+            </div>
+            <div class="row g-3 mb-4">
+                @foreach (var metric in Metrics(report.Summary))
+                { <div class="col-6 col-lg-3"><div class="auth-panel p-3 h-100"><p class="small text-muted mb-1">@metric.Label</p><p class="h3 mb-0">@metric.Value</p></div></div> }
+            </div>
+            <p class="small text-muted">Sessions belong to their start date; watch hours include all their recorded time, including after the selected dates. Historical results include deleted movies/profiles. Timed out includes abandoned sessions without a checkpoint for two minutes. “Finished” is the player end event, not a verified complete viewing.</p>
+            @if (report.TotalMovies == 0) { <div class="auth-panel p-4">No playback sessions in this date range.</div> }
+            else
+            {
+                <div class="table-responsive auth-panel p-2">
+                    <table class="table table-dark table-hover align-middle mb-0">
+                        <caption class="text-muted">Movies ranked by qualified views, then sessions. Export includes every page.</caption>
+                        <thead><tr><th scope="col">Movie</th><th scope="col">Views ≥120s</th><th scope="col">Sessions</th><th scope="col">Profiles</th><th scope="col">Watch hours</th><th scope="col">Finished</th><th scope="col">Active</th><th scope="col">Timed out</th></tr></thead>
+                        <tbody>@foreach (var movie in report.Movies)
+                        {
+                            <tr @key="movie.MovieId"><th scope="row">@movie.Title <span class="small text-muted">#@movie.MovieId</span>
+                                @if (movie.IsDeleted) { <span class="badge text-bg-secondary">Deleted</span> }</th>
+                                <td>@movie.QualifiedViews.ToString("N0")</td><td>@movie.Sessions.ToString("N0")</td><td>@movie.UniqueProfiles.ToString("N0")</td>
+                                <td>@((movie.WatchedSeconds / 3600m).ToString("N2"))</td><td>@movie.FinishedSessions</td><td>@movie.ActiveSessions</td><td>@movie.TimedOutSessions</td></tr>
+                        }</tbody>
+                    </table>
+                </div>
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mt-3">
+                    <p class="mb-0">@report.TotalMovies movies · Page @report.Page of @Pages</p>
+                    <div class="d-flex gap-3"><button class="btn btn-outline-light" disabled="@(loading || exporting || report.Page <= 1)" @onclick="() => Load(report.Page - 1)">Previous</button>
+                        <button class="btn btn-outline-light" disabled="@(loading || exporting || report.Page >= Pages)" @onclick="() => Load(report.Page + 1)">Next</button></div>
+                </div>
+            }
+        }
+    }
+</AuthShell>
+@code {
+    private sealed class Filter { public DateTime From { get; set; } = DateTime.UtcNow.AddHours(7).Date.AddDays(-29); public DateTime To { get; set; } = DateTime.UtcNow.AddHours(7).Date; }
+    private readonly Filter filter = new();
+    private AdminViewingReport? report;
+    private DateTime fromUtc, toUtc;
+    private bool ready, isAdmin, loading, exporting, disposed;
+    private int generation;
+    private string? error, notice;
+    private IJSObjectReference? download;
+    private readonly CancellationTokenSource lifetime = new();
+    private int Pages => report is null ? 0 : (report.TotalMovies + report.PageSize - 1) / report.PageSize;
+    private static string LocalDate(DateTime utc) => utc.AddHours(7).ToString("dd MMM yyyy");
+    private static IEnumerable<(string Label, string Value)> Metrics(ViewingReportSummary s) => new[] {
+        ("Qualified views", s.QualifiedViews.ToString("N0")), ("Playback sessions", s.Sessions.ToString("N0")),
+        ("Unique profiles", s.UniqueProfiles.ToString("N0")), ("Watch hours", (s.WatchedSeconds / 3600m).ToString("N2")),
+        ("Finished sessions", s.FinishedSessions.ToString("N0")), ("Active sessions", s.ActiveSessions.ToString("N0")), ("Timed-out sessions", s.TimedOutSessions.ToString("N0")) };
+    protected override async Task OnInitializedAsync() { Session.Changed += Changed; await Session.InitializeAsync(); await Access(); }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Access(); StateHasChanged(); } });
+    private async Task Access()
+    {
+        var allowed = Session.IsAuthenticated && (await Session.GetAuthenticationStateAsync()).User.IsInRole("Admin"); ready = true;
+        if (!allowed) { isAdmin = false; report = null; generation++; loading = exporting = false; error = notice = null; return; }
+        if (!isAdmin) { isAdmin = true; await Apply(); }
+    }
+    private async Task Apply()
+    {
+        if (loading || exporting || !isAdmin || disposed) return;
+        if (filter.To.Date < filter.From.Date || filter.From.Year < 2000 || filter.To.Year >= 9999 || (filter.To.Date - filter.From.Date).TotalDays >= 366)
+        { error = "Choose a valid date range of at most 366 days."; return; }
+        var offset = TimeSpan.FromHours(7);
+        fromUtc = new DateTimeOffset(DateTime.SpecifyKind(filter.From.Date, DateTimeKind.Unspecified), offset).UtcDateTime;
+        toUtc = new DateTimeOffset(DateTime.SpecifyKind(filter.To.Date.AddDays(1), DateTimeKind.Unspecified), offset).UtcDateTime;
+        report = null;
+        await Load(1);
+    }
+    private async Task Load(int page)
+    {
+        if (disposed || !isAdmin || loading || exporting) return;
+        var version = ++generation; loading = true; error = notice = null;
+        var result = await Api.GetAsync(fromUtc, toUtc, page, lifetime.Token);
+        if (disposed || version != generation || !isAdmin) return;
+        loading = false;
+        if (result.Success) report = result.Value;
+        else { error = result.Error; if (result.Status is 401 or 403) report = null; }
+    }
+    private async Task Export()
+    {
+        if (disposed || !isAdmin || loading || exporting || report is null) return;
+        var version = generation; var from = report.FromUtc; var to = report.ToUtc;
+        exporting = true; error = notice = null;
+        try
+        {
+            var result = await Api.ExportAsync(from, to, lifetime.Token);
+            if (disposed || version != generation || !isAdmin) return;
+            if (!result.Success) { error = result.Error; if (result.Status is 401 or 403) report = null; return; }
+            download ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/report-download.js");
+            if (disposed || version != generation || !isAdmin) return;
+            using var stream = new MemoryStream(result.Value!);
+            using var reference = new DotNetStreamReference(stream);
+            await download.InvokeVoidAsync("downloadExcel", $"viewing-report-{LocalDate(from).Replace(' ', '-')}-{LocalDate(to.AddTicks(-1)).Replace(' ', '-')}.xlsx", reference);
+            notice = "Excel download started. It includes all movies in the displayed date range, using newly read totals.";
+        }
+        catch (JSException) { if (!disposed && version == generation) error = "The file could not be downloaded. Please try again."; }
+        finally { if (!disposed && version == generation) exporting = false; }
+    }
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true; generation++; Session.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose();
+        if (download is not null) await download.DisposeAsync();
+    }
+}

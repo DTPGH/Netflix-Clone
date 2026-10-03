@@ -185,7 +185,7 @@ Table Subscriptions {
     `EndDate IS NULL OR EndDate >= StartDate` [name: 'CK_Subscriptions_DateRange']
   }
 
-  Note: 'Subscription history for a UserAccount. An account may have many subscriptions over time, but application/domain logic must ensure at most one Active subscription at a time.'
+  Note: 'Subscription history for a UserAccount. Simulated purchase starts immediately for 30 days with AutoRenew=false. Effective means Status=Active AND StartDate<=UtcNow AND UtcNow<EndDate. EndDate is always set by this purchase flow; legacy Active rows without EndDate require administrator attention. Application serializes purchases through a UserAccount row lock to ensure at most one effective subscription. Expired Active rows are marked Expired when a later purchase succeeds; reads infer expiry without a job. No renewal, upgrade or cancellation flow in this slice.'
 }
 
 Table PaymentTransactions {
@@ -210,7 +210,7 @@ Table PaymentTransactions {
     `(Status = 'Succeeded' AND PaidAt IS NOT NULL) OR (Status IN ('Pending', 'Failed') AND PaidAt IS NULL)` [name: 'CK_PaymentTransactions_PaidAt']
   }
 
-  Note: 'Simulated payment transaction history. TransactionCode uniquely identifies a simulated payment attempt. Successful payment activates or renews the related Subscription through application/domain logic.'
+  Note: 'Simulated payment transaction history. Amount snapshots the backend Plan.Price in VND. Method=Simulated. TransactionCode=SIM-{authenticatedAccountId}-{clientGuid} is the stable per-account idempotency identity in this MVP, not a provider payment reference. Retrying a succeeded attempt returns its original result; another plan with the same key is rejected. New Subscription and Succeeded PaymentTransaction are committed atomically. No real payment details are collected. Separate provider transaction/idempotency fields should be introduced before real payment integration.'
 }
 
 // Bổ sung cho bảng Movies khi hồ sơ Kids hoạt động
@@ -422,6 +422,10 @@ Table ViewingSessions {
   StartedAt datetime2 [not null, default: `sysdatetime()`]
   EndedAt datetime2
   WatchedSeconds int [not null, default: 0]
+  ClientSessionId uniqueidentifier [note: 'Client-generated idempotency key; unique per device when not null. Legacy sessions may have null.']
+  CheckpointSequence bigint [not null, default: 0, note: 'Monotonically increasing checkpoint sequence; repeated/older requests do not add time.']
+  WatchedMilliseconds bigint [not null, default: 0, note: 'Cumulative acknowledged playback time; WatchedSeconds is its integer-second projection.']
+  LastCheckpointAtUtc datetime2 [not null, default: `sysutcdatetime()`, note: 'Last accepted heartbeat. Stale sessions close lazily on subsequent API activity, with no offline time added.']
   IsQualifiedView bit [not null, default: 0]
   Quality nvarchar(20) [note: 'Informational/default playback quality in MVP; becomes authoritative when multi-quality VideoAssets are implemented']
   EndReason nvarchar(30) [note: 'Null while active. Allowed ended-session values: Finished, Closed, Timeout']
@@ -431,12 +435,14 @@ Table ViewingSessions {
     MovieId [name: 'IX_ViewingSessions_MovieId']
     DeviceId [name: 'IX_ViewingSessions_DeviceId']
     (DeviceId, EndedAt) [name: 'IX_ViewingSessions_Device_Active']
+    (DeviceId, ClientSessionId) [name: 'UX_ViewingSessions_Device_ClientSession', note: 'SQL uses a UNIQUE filtered index WHERE ClientSessionId IS NOT NULL; legacy null keys are allowed.']
     (MovieId, IsQualifiedView) [name: 'IX_ViewingSessions_Movie_QualifiedView']
     StartedAt [name: 'IX_ViewingSessions_StartedAt']
   }
 
   Checks {
     `WatchedSeconds >= 0` [name: 'CK_ViewingSessions_WatchedSeconds']
+    `CheckpointSequence >= 0 AND WatchedMilliseconds >= 0 AND WatchedSeconds = WatchedMilliseconds / 1000` [name: 'CK_ViewingSessions_Checkpoint']
     `EndedAt IS NULL OR EndedAt >= StartedAt` [name: 'CK_ViewingSessions_TimeRange']
     `IsQualifiedView = 0 OR WatchedSeconds >= 120` [name: 'CK_ViewingSessions_QualifiedView']
     `EndReason IS NULL OR EndReason IN ('Finished', 'Closed', 'Timeout')` [name: 'CK_ViewingSessions_EndReason']
