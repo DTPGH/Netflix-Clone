@@ -5,6 +5,9 @@ using NetflixClone.Domain.Entities;
 namespace NetflixClone.Infrastructure.Persistence.Repositories;
 public sealed class SubscriptionRepository(NetflixCloneDbContext db) : ISubscriptionRepository
 {
+    public Task<bool> HasEffectiveAsync(int accountId, DateTime utcNow, CancellationToken ct) =>
+        db.Subscriptions.AsNoTracking().AnyAsync(s => s.UserAccountId == accountId && s.Status == "Active" &&
+            s.StartDate <= utcNow && s.EndDate != null && s.EndDate > utcNow, ct);
     public async Task<IReadOnlyList<AvailablePlan>> ListPlansAsync(CancellationToken ct) =>
         await db.Plans.AsNoTracking().Where(p => p.IsActive).OrderBy(p => p.Price).ThenBy(p => p.Id)
             .Select(p => new AvailablePlan(p.Id, p.Name, p.Price, "VND", 30, p.MaxConcurrentStreams, p.MaxQuality,

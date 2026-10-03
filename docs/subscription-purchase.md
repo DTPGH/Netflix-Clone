@@ -4,7 +4,7 @@
 
 Open `/subscription` from authenticated navigation. When no effective subscription exists, choose an offered plan and explicitly confirm a simulated payment. No money is charged, no bank/card information is collected and no external provider is involved. Admin prices now display VND per 30 days.
 
-StartDate=IClock.UtcNow, EndDate=StartDate+30 days, Status=Active, AutoRenew=false. Effective means `Status == Active && StartDate <= now && now < EndDate`. Another purchase is blocked until expiry. Reads infer Expired without writing; a later successful purchase marks old expired Active rows Expired in its same save. Active rows without EndDate, future Active rows or multiple effective rows cause an internal data-integrity failure instead of allowing a new purchase. Plan quality/stream settings remain configuration; playback/subscription enforcement, upgrades, automatic renewal, cancellation, refunds and real payments are out of scope.
+StartDate=IClock.UtcNow, EndDate=StartDate+30 days, Status=Active, AutoRenew=false. Effective means `Status == Active && StartDate <= now && now < EndDate`. Another purchase is blocked until expiry. Reads infer Expired without writing; a later successful purchase marks old expired Active rows Expired in its same save. Active rows without EndDate, future Active rows or multiple effective rows cause an internal data-integrity failure instead of allowing a new purchase. Plan quality/stream settings remain configuration; stream/quality enforcement, upgrades, automatic renewal, cancellation, refunds and real payments are out of scope.
 
 ## API
 

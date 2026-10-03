@@ -3,6 +3,7 @@ using NetflixClone.Domain.Entities;
 namespace NetflixClone.Application.Common.Abstractions.Persistence;
 public interface ISubscriptionRepository
 {
+    Task<bool> HasEffectiveAsync(int accountId, DateTime utcNow, CancellationToken ct);
     Task<IReadOnlyList<AvailablePlan>> ListPlansAsync(CancellationToken ct);
     Task<Plan?> GetPlanForPurchaseAsync(int planId, CancellationToken ct);
     Task<PaymentTransaction?> FindPaymentAsync(int accountId, string transactionCode, CancellationToken ct);

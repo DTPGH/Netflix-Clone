@@ -1,11 +1,13 @@
 using NetflixClone.Application.Common.Abstractions.Persistence;
 using NetflixClone.Application.Common.Results;
+using NetflixClone.Application.Common.Abstractions.Time;
 namespace NetflixClone.Application.Catalog.Movies;
 public interface IGetMoviePlaybackUseCase
 {
     Task<Result<PlaybackResult>> ExecuteAsync(ProfileMovieQuery query, CancellationToken cancellationToken = default);
 }
-public sealed class GetMoviePlaybackUseCase(IMovieCatalogQueries movies, IProfileRepository profiles, IUserAccountRepository accounts) : IGetMoviePlaybackUseCase
+public sealed class GetMoviePlaybackUseCase(IMovieCatalogQueries movies, IProfileRepository profiles, IUserAccountRepository accounts,
+    ISubscriptionRepository subscriptions, IClock clock) : IGetMoviePlaybackUseCase
 {
     public async Task<Result<PlaybackResult>> ExecuteAsync(ProfileMovieQuery query, CancellationToken cancellationToken = default)
     {
@@ -16,6 +18,9 @@ public sealed class GetMoviePlaybackUseCase(IMovieCatalogQueries movies, IProfil
         if (profile is null || profile.IsDeleted) return Result<PlaybackResult>.Failure(MovieErrors.NotFound);
         var movie = await movies.GetPlaybackAsync(query.MovieId, cancellationToken);
         if (movie is null || movie.MinAge > profile.MaturityLevel) return Result<PlaybackResult>.Failure(MovieErrors.NotFound);
+        // Selling status of Plan does not revoke a subscription already purchased.
+        if (!await subscriptions.HasEffectiveAsync(query.UserAccountId, clock.UtcNow, cancellationToken))
+            return Result<PlaybackResult>.Failure(new("Movies.SubscriptionRequired", "An active subscription is required to play this video.", ErrorType.Forbidden));
         // Legacy database value is only a media identifier, never a public URL or filesystem path.
         var url = movie.VideoUrl;
         if (!movie.IsAvailable || string.IsNullOrWhiteSpace(url) ||

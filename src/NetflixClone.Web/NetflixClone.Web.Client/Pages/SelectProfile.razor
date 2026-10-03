@@ -4,6 +4,7 @@
 @inject AuthSession Session
 @inject ActiveProfileState Active
 @inject ProfilesApiClient Api
+@inject SubscriptionsApiClient Subscriptions
 @inject NavigationManager Navigation
 <PageTitle>Choose a profile · Netflix Clone</PageTitle>
 <AuthShell>
@@ -59,6 +60,14 @@
         var request = ++requestVersion; var version = Active.Version;
         lastVersion = version; profiles = []; error = null; loading = true;
         if (!Session.IsAuthenticated) { loading = false; return; }
+        var subscription = await Subscriptions.CurrentAsync(lifetime.Token);
+        if (disposed || request != requestVersion || version != Active.Version) return;
+        if (!subscription.Success) { loading = false; error = subscription.Error; return; }
+        if (subscription.Value!.Current?.IsEffective != true)
+        {
+            Navigation.NavigateTo("/subscription");
+            return;
+        }
         var result = await Api.ListAsync(lifetime.Token);
         if (disposed || request != requestVersion || version != Active.Version) return;
         loading = false;

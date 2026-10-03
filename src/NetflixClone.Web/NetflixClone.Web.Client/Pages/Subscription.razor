@@ -25,6 +25,10 @@
                     <p class="h5">@current.PlanName <span class="badge text-bg-success">Active</span></p>
                     <p class="mb-1">Valid until @Date(current.EndDateUtc). No automatic renewal.</p>
                     <p class="text-muted mb-0">You can purchase another plan after this one expires.</p>
+                    @if (current.IsEffective && current.EndDateUtc > DateTime.UtcNow)
+                    {
+                        <NavLink class="btn btn-danger mt-3" href="/select-profile">Choose a profile</NavLink>
+                    }
                 }
                 else
                 {

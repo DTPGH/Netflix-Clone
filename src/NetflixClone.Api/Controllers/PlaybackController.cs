@@ -18,9 +18,8 @@ public sealed class PlaybackController(IGetMoviePlaybackUseCase playback, IPlayb
         if (!int.TryParse(User.FindFirst("sub")?.Value, out var accountId) || accountId <= 0) return Unauthorized();
         var result = await playback.ExecuteAsync(new(accountId, profileId, movieId), cancellationToken);
         if (result.IsFailure)
-            return result.Error!.Type == ErrorType.NotFound
-                ? NotFound(new { result.Error.Code, result.Error.Description })
-                : Conflict(new { result.Error.Code, result.Error.Description });
+            return StatusCode(result.Error!.Type switch { ErrorType.NotFound => 404, ErrorType.Forbidden => 403, _ => 409 },
+                new { result.Error.Code, result.Error.Description });
         var value = result.Value!;
         if (media.Resolve(value.MediaKey) is null)
             return Conflict(new { Code = "Movies.PlaybackUnavailable", Description = "Video is not available." });

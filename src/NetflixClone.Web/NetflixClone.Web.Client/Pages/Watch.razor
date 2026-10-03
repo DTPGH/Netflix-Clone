@@ -17,6 +17,7 @@
     else if (error is not null)
     {
         <div class="alert alert-warning" role="alert">@error</div>
+        @if (subscriptionRequired) { <NavLink class="btn btn-danger me-3" href="/subscription">View subscription plans</NavLink> }
         <button class="btn btn-outline-light" @onclick="Load">Try again</button>
     }
     else if (playback is not null)
@@ -41,7 +42,7 @@
     [Parameter] public int MovieId { get; set; }
     private PlaybackReply? playback;
     private string? error, pendingUrl;
-    private bool busy, renewing, disposed;
+    private bool busy, renewing, disposed, subscriptionRequired;
     private long version;
     private long progressProfileVersion;
     private int progressProfileId, progressMovieId, resumeSeconds;
@@ -95,6 +96,7 @@
         await Stop();
         var request = ++version;
         busy = true; renewing = false; error = null; playback = null; pendingUrl = null;
+        subscriptionRequired = false;
         progressReady = false; progressError = null; resumeSeconds = 0; progressStamp = null; progressCompleted = false;
         viewingError = null;
         await Active.InitializeAsync();
@@ -125,6 +127,7 @@
         {
             playback = null; pendingUrl = null;
             error = result.Error ?? "Could not prepare protected playback.";
+            subscriptionRequired = result.Status == 403;
             await Stop();
             return;
         }

@@ -38,7 +38,7 @@ public sealed class CatalogApiClient(HttpClient http, AuthSession session)
                 var status = (int)response.StatusCode;
                 return new(default, status switch {
                     401 => "Please sign in to watch this demo.",
-                    403 => "You do not have permission to play this video.",
+                    403 => "An active subscription is required to play this video. Check your subscription and try again.",
                     404 => "This movie is unavailable for this profile.",
                     409 => "No playable demo video is available for this movie.",
                     400 => "Check your search and filter values.",

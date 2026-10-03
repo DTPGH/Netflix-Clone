@@ -31,6 +31,7 @@ public sealed class ViewingSessionsController(IViewingSessionUseCase useCase) : 
         ErrorType.NotFound => NotFound(new { error.Code, error.Description }),
         ErrorType.Conflict => Conflict(new { error.Code, error.Description }),
         ErrorType.Validation => BadRequest(new { error.Code, error.Description }),
+        ErrorType.Forbidden => StatusCode(403, new { error.Code, error.Description }),
         _ => Problem(statusCode: 500, title: "Viewing session could not be saved.")
     };
 }

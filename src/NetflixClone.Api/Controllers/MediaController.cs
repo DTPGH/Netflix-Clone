@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using NetflixClone.Api.Media;
 using NetflixClone.Api.Security;
 using NetflixClone.Application.Catalog.Movies;
+using NetflixClone.Application.Common.Results;
 namespace NetflixClone.Api.Controllers;
 [ApiController]
 [Authorize(AuthenticationSchemes = PlaybackTicketHandler.SchemeName)]
@@ -20,7 +21,9 @@ public sealed class MediaController(IGetMoviePlaybackUseCase playback, PrivateDe
             !int.TryParse(User.FindFirst("movie")?.Value, out var ticketMovie) || movieId != ticketMovie)
             return Unauthorized();
         var result = await playback.ExecuteAsync(new(account, profile, movieId), ct);
-        if (result.IsFailure || result.Value!.MediaKey != User.FindFirst("media")?.Value) return NotFound();
+        if (result.IsFailure)
+            return result.Error!.Type == ErrorType.Forbidden ? StatusCode(403) : NotFound();
+        if (result.Value!.MediaKey != User.FindFirst("media")?.Value) return NotFound();
         var path = media.Resolve(result.Value.MediaKey);
         if (path is null) return NotFound();
         Response.Headers.CacheControl = "private, no-store";
