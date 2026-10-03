@@ -6,7 +6,7 @@
 <PageTitle>Admin plans · Netflix Clone</PageTitle>
 <AuthShell>
     <div class="mb-4"><p class="eyebrow">SUBSCRIPTION CONFIGURATION</p><h1 class="display-5 fw-bold">Plans</h1>
-        <p class="text-muted">Prices are VND per month. New plans start inactive. Stream and quality limits are configuration for future playback enforcement.</p></div>
+        <p class="text-muted">Prices are VND per 30 days. New plans start inactive. Stream and quality limits are configuration for future playback enforcement.</p></div>
     @if (!ready) { <p role="status">Checking administrator access…</p> }
     else if (!isAdmin) { <p>Administrator access required.</p> }
     else
@@ -27,7 +27,7 @@
                     <div class="row g-3">
                         <div class="col-12 col-md-6"><label for="plan-name" class="form-label">Name</label>
                             <InputText id="plan-name" class="form-control" maxlength="100" @bind-Value="form.Name" /></div>
-                        <div class="col-12 col-md-6"><label for="plan-price" class="form-label">Price (VND / month)</label>
+                        <div class="col-12 col-md-6"><label for="plan-price" class="form-label">Price (VND / 30 days)</label>
                             <InputNumber id="plan-price" class="form-control" step="0.01" @bind-Value="form.Price" /></div>
                         <div class="col-12 col-md-6"><label for="plan-streams" class="form-label">Maximum concurrent streams</label>
                             <InputNumber id="plan-streams" class="form-control" min="1" max="10" @bind-Value="form.MaxConcurrentStreams" /></div>
@@ -56,7 +56,7 @@
             {
                 <section class="auth-panel p-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-3" @key="plan.PlanId">
                     <div><h2 class="h5">@plan.Name <span class="badge @(plan.IsActive ? "text-bg-success" : "text-bg-secondary")">@(plan.IsActive ? "Active" : "Inactive")</span></h2>
-                        <p class="mb-1">@plan.Price.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("vi-VN")) VND / month · @plan.MaxConcurrentStreams streams · @plan.MaxQuality</p>
+                        <p class="mb-1">@plan.Price.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("vi-VN")) VND / 30 days · @plan.MaxConcurrentStreams streams · @plan.MaxQuality</p>
                         <p class="text-muted mb-0">@plan.SubscriptionCount subscriptions (all statuses)</p></div>
                     <div class="d-flex flex-wrap gap-3">
                         <button class="btn btn-outline-light" disabled="@(busy || needsReload)" @onclick="() => Edit(plan)">@(plan.SubscriptionCount > 0 ? "View configuration" : "Edit")</button>

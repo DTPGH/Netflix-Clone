@@ -1,6 +1,6 @@
 # Admin plans MVP
 
-Open /admin/plans from the Admin navigation. Prices are VND per month.
+Open /admin/plans from the Admin navigation. Prices are VND per 30 days, matching the simulated subscription purchase lifetime.
 Create a plan, review its configuration, then activate it in a separate confirmed action.
 Creation always sets IsActive=false; no delete endpoint is provided.
 

@@ -10,6 +10,8 @@ using NetflixClone.Infrastructure.Persistence.Repositories;
 using NetflixClone.Infrastructure.Persistence.Queries;
 using NetflixClone.Infrastructure.Security;
 using NetflixClone.Infrastructure.Time;
+using NetflixClone.Application.Common.Abstractions.Reporting;
+using NetflixClone.Infrastructure.Reporting;
 
 namespace NetflixClone.Infrastructure;
 
@@ -39,6 +41,12 @@ public static class DependencyInjection
         services.AddScoped<IDeviceRepository, DeviceRepository>();
         services.AddScoped<IProfileRepository, ProfileRepository>();
         services.AddScoped<IWatchHistoryRepository, WatchHistoryRepository>();
+        services.AddScoped<IViewingSessionRepository, ViewingSessionRepository>();
+        services.AddScoped<IAdminViewingReportQueries, AdminViewingReportQueries>();
+        services.AddScoped<IViewingReportExporter, ViewingReportExcelExporter>();
+        services.AddScoped<IViewingSessionScopeFactory, ViewingSessionScopeFactory>();
+        services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
+        services.AddScoped<ISubscriptionPurchaseScopeFactory, SubscriptionPurchaseScopeFactory>();
         services.AddScoped<IMyListRepository, MyListRepository>();
         services.AddScoped<IRatingRepository, RatingRepository>();
         services.AddScoped<IProfilePreferenceRepository, ProfilePreferenceRepository>();

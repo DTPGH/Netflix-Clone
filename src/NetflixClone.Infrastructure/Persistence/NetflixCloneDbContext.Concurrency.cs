@@ -7,6 +7,17 @@ public partial class NetflixCloneDbContext
 {
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ViewingSession>(entity =>
+        {
+            entity.Property<Guid?>("ClientSessionId");
+            entity.Property<long>("CheckpointSequence").IsConcurrencyToken();
+            entity.Property<long>("WatchedMilliseconds");
+            entity.Property<DateTime>("LastCheckpointAtUtc");
+            entity.Property(s => s.EndedAt).IsConcurrencyToken();
+            entity.HasIndex("DeviceId", "ClientSessionId").IsUnique()
+                .HasDatabaseName("UX_ViewingSessions_Device_ClientSession")
+                .HasFilter("[ClientSessionId] IS NOT NULL");
+        });
         modelBuilder.Entity<Plan>(entity =>
         {
             entity.Property(p => p.UpdatedAt).IsConcurrencyToken();
