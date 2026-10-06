@@ -1,95 +1,101 @@
 @page "/confirm-email"
 @rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
 @inject AuthApiClient Api
 @inject IWebAssemblyHostEnvironment Environment
-
+@inject IJSRuntime JS
+<PageTitle>Confirm email · Netflix Clone</PageTitle>
 <AuthShell>
     <div class="form-panel mx-auto">
         <section class="auth-panel p-4 p-md-5">
             <p class="eyebrow">FINISH SETTING UP</p>
             <h1 class="h2">Confirm your email</h1>
-            <p class="text-muted">Enter your account number and confirmation code.</p>
-            @if (Environment.IsDevelopment())
+            @if (!ready || busy) { <p role="status">Confirming your email…</p> }
+            else if (confirmed)
             {
-                <p class="small text-muted">Local development: email delivery is simulated. Use the account number and code
-                    from the API development terminal.</p>
-                }
-                @if (error is not null)
-                {
-                    <div class="alert alert-danger" role="alert">@error</div>
-                }
-                @if (confirmed)
-                {
-                    <div class="alert alert-success" role="status">Your email is confirmed. You can now sign in.</div>
-                    <NavLink class="btn btn-danger btn-lg w-100" href="/login">Continue to sign in</NavLink>
-                }
-                else
-                {
-                    <EditForm Model="form" OnValidSubmit="Confirm" FormName="confirm-email">
-                        <DataAnnotationsValidator />
-                        <fieldset disabled="@busy">
-                            <div class="mb-3">
-                                <label class="form-label" for="account-number">Account number</label>
-                                <InputNumber id="account-number" class="form-control" @bind-Value="form.UserAccountId" />
-                                <ValidationMessage For="() => form.UserAccountId" />
-                            </div>
-                            <div class="mb-4">
-                                <label class="form-label" for="confirmation-code">Confirmation code</label>
-                                <InputText id="confirmation-code" type="password" autocomplete="off" class="form-control"
-                                           @bind-Value="form.Token" />
-                                <ValidationMessage For="() => form.Token" />
-                            </div>
-                            <button class="btn btn-danger w-100" type="submit">@(busy ? "Confirming…" : "Confirm email")</button>
-                        </fieldset>
-                    </EditForm>
-                }
-            </section>
+                <div class="alert alert-success" role="status">Your email is confirmed. You can now sign in.</div>
+                <NavLink class="btn btn-danger btn-lg w-100" href="/login">Continue to sign in</NavLink>
+            }
+            else
+            {
+                <p class="text-muted">Open the confirmation link sent to your email address.</p>
+                @if (error is not null) { <div class="alert alert-warning" role="alert">@error</div> }
+                @if (canRetry) { <button class="btn btn-danger w-100" @onclick="Confirm">Try confirmation again</button> }
+                @if (Environment.IsDevelopment()) { <p class="small text-muted">Local development: open the confirmation link printed in the API terminal. No email is sent to your inbox.</p> }
+            }
+        </section>
+        @if (!confirmed)
+        {
             <section class="auth-panel p-4 mt-3" aria-labelledby="resend-title">
-                <h2 class="h5" id="resend-title">Need a new code?</h2>
-                <p class="small text-muted">Request another confirmation for your email address.</p>
-                @if (resendMessage is not null)
-                {
-                    <div class="alert alert-secondary" role="status">@resendMessage</div>
-                }
+                <h2 class="h5" id="resend-title">Need a new link?</h2>
+                <p class="small text-muted">Request another confirmation email if your link expired or was replaced.</p>
+                @if (resendMessage is not null) { <div class="alert alert-secondary" role="status">@resendMessage</div> }
                 <EditForm Model="resend" OnValidSubmit="Resend" FormName="resend-email">
                     <DataAnnotationsValidator />
-                    <label class="form-label" for="resend-email">Email address</label>
-                    <InputText id="resend-email" class="form-control" type="email" autocomplete="email"
-                               @bind-Value="resend.Email" />
-                    <ValidationMessage For="() => resend.Email" />
-                    <button class="btn btn-outline-light w-100 mt-3" disabled="@resending" type="submit">@(resending ?
-                                                                                                                                           "Requesting…" : "Send a new code")</button>
-                    </EditForm>
-                </section>
-            </div>
-        </AuthShell>
-
+                    <fieldset disabled="@(resending || busy || !ready)">
+                        <label class="form-label" for="resend-email">Email address</label>
+                        <InputText id="resend-email" class="form-control" type="email" autocomplete="email" @bind-Value="resend.Email" />
+                        <ValidationMessage For="() => resend.Email" />
+                        <button class="btn btn-outline-light w-100 mt-3" type="submit">@(resending ? "Requesting…" : "Send a new confirmation link")</button>
+                    </fieldset>
+                </EditForm>
+            </section>
+        }
+    </div>
+</AuthShell>
 @code {
-    [SupplyParameterFromQuery(Name = "accountId")] public int? AccountId { get; set; }
+    public sealed class ConfirmationLink { public int AccountId { get; set; } public string Token { get; set; } = ""; }
     private ConfirmForm form = new();
-    private ResendForm resend = new();
-    private bool busy, confirmed, resending;
+    private readonly ResendForm resend = new();
+    private bool ready, busy, confirmed, resending, canRetry, disposed;
     private string? error, resendMessage;
-    protected override void OnParametersSet() { if (AccountId is > 0) form.UserAccountId = AccountId.Value; }
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/email-confirmation.js");
+            ConfirmationLink link;
+            try { link = await module.InvokeAsync<ConfirmationLink>("consumeLink"); }
+            finally { await module.DisposeAsync(); }
+            if (disposed) return;
+            if (link.AccountId > 0 && link.Token.Length == 64 && link.Token.All(Uri.IsHexDigit))
+            {
+                form = new() { UserAccountId = link.AccountId, Token = link.Token };
+                await Confirm();
+            }
+            else if (link.Token.Length != 0 || link.AccountId != 0)
+                error = "This confirmation link is invalid. Request a new link below.";
+        }
+        catch (JSException) { if (!disposed) error = "Could not read the confirmation link. Reopen the link from your email."; }
+        finally { if (!disposed) ready = true; }
+    }
     private async Task Confirm()
     {
-        if (busy) return;
-        busy = true; error = null;
-        try { var result = await Api.ConfirmAsync(form); confirmed = result.Success; error = result.Error; }
-        finally { form.Token = ""; busy = false; }
+        if (busy || disposed) return;
+        busy = true; error = null; canRetry = false;
+        try
+        {
+            var result = await Api.ConfirmAsync(form);
+            if (disposed) return;
+            confirmed = result.Success; error = result.Error;
+            // A lost response can hide a successful confirmation; the backend supports safe repeats.
+            canRetry = !result.Success && (result.Status == 0 || result.Status >= 500);
+            if (!canRetry) form.Token = "";
+        }
+        finally { if (!disposed) busy = false; }
     }
     private async Task Resend()
     {
-        if (resending) return;
+        if (resending || busy || disposed) return;
         resending = true;
         try
         {
             var result = await Api.ResendAsync(resend);
-            resendMessage = result.Success
-                ? "If an unconfirmed account exists for this email, a confirmation email has been sent."
-                : result.Error;
+            if (disposed) return;
+            resendMessage = result.Success ? "If an unconfirmed account exists for this email, a new confirmation link has been sent." : result.Error;
+            if (result.Success) { form.Token = ""; canRetry = false; }
         }
-        finally { resending = false; }
+        finally { if (!disposed) resending = false; }
     }
+    public void Dispose() { disposed = true; form.Token = ""; }
 }
-

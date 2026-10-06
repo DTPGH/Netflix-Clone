@@ -4,6 +4,7 @@
 @using System.Security.Claims
 @inject AuthSession Session
 @inject DevicesApiClient Api
+@inject NavigationManager Navigation
 
 <PageTitle>Manage devices · Netflix Clone</PageTitle>
 <AuthShell>
@@ -28,6 +29,18 @@
             <p class="mb-0 text-muted">Last activity includes automatic session renewal. It does not mean someone is online.</p>
             <button class="btn btn-outline-light" disabled="@(busy || loading)" @onclick="Reload">@(loading ? "Loading…" : "Reload list")</button>
         </div>
+        <button class="btn btn-outline-danger mb-3" disabled="@(busy || loading || Session.IsLoggingOut)" @onclick="() => { confirmAll = true; confirmId = null; }">Sign out all devices</button>
+        @if (confirmAll)
+        {
+            <section class="auth-panel p-4 mb-4" aria-label="Confirm sign out all devices">
+                <h2 class="h5">Sign out all devices, including this browser?</h2>
+                <p class="text-muted">Everyone will need to sign in again. Current access may continue until its token expires. Someone who knows your password can sign in again.</p>
+                <div class="d-flex flex-wrap gap-3">
+                    <button class="btn btn-danger" disabled="@(busy || loading || Session.IsLoggingOut)" @onclick="RevokeAll">@(busy ? "Signing out…" : "Confirm sign out all")</button>
+                    <button class="btn btn-outline-light" disabled="@busy" @onclick="() => confirmAll = false">Cancel</button>
+                </div>
+            </section>
+        }
         @if (error is not null)
         {
             <div class="alert alert-danger" role="alert">@error</div>
@@ -107,7 +120,7 @@
     private readonly HashSet<int> confirmedRevoked = [];
     private string? accountId, error, notice;
     private int? confirmId;
-    private bool ready, loaded, loading, busy, needsReload, disposed;
+    private bool ready, loaded, loading, busy, needsReload, disposed, confirmAll;
     private long generation;
     private CancellationTokenSource requests = new();
 
@@ -139,7 +152,7 @@
         accountId = current;
         generation++;
         requests.Cancel(); requests.Dispose(); requests = new();
-        devices = []; confirmedRevoked.Clear(); confirmId = null;
+        devices = []; confirmedRevoked.Clear(); confirmId = null; confirmAll = false;
         error = notice = null;
         loaded = loading = busy = needsReload = false;
         if (current is not null) await Load();
@@ -183,6 +196,7 @@
     {
         if (busy || loading || needsReload) return;
         confirmId = id;
+        confirmAll = false;
         error = notice = null;
     }
 
@@ -209,6 +223,21 @@
                 // Refresh the data, never automatically repeat the revoke request.
                 if (reply.Status is 404 or 409) await Load();
             }
+        }
+        finally { if (!disposed && version == generation) busy = false; }
+    }
+
+    private async Task RevokeAll()
+    {
+        if (busy || loading || !confirmAll) return;
+        var version = generation;
+        busy = true; error = notice = null;
+        try
+        {
+            var reply = await Api.RevokeAllAsync(requests.Token);
+            if (disposed) return;
+            if (reply.Success) { if (!Session.IsAuthenticated) Navigation.NavigateTo("/login"); return; }
+            if (version == generation) { error = reply.Error; needsReload = true; }
         }
         finally { if (!disposed && version == generation) busy = false; }
     }

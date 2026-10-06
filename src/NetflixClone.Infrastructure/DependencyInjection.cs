@@ -49,6 +49,7 @@ public static class DependencyInjection
         services.AddScoped<IViewingSessionScopeFactory, ViewingSessionScopeFactory>();
         services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
         services.AddScoped<ISubscriptionPurchaseScopeFactory, SubscriptionPurchaseScopeFactory>();
+        services.AddScoped<IAuthenticationMutationScopeFactory, AuthenticationMutationScopeFactory>();
         services.AddScoped<IMyListRepository, MyListRepository>();
         services.AddScoped<IRatingRepository, RatingRepository>();
         services.AddScoped<IProfilePreferenceRepository, ProfilePreferenceRepository>();
@@ -62,6 +63,7 @@ public static class DependencyInjection
         services.AddScoped<IEmailConfirmationTokenService, EmailConfirmationTokenService>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<IEmailConfirmationSender, DevelopmentEmailConfirmationSender>();
+        services.AddScoped<NetflixClone.Application.Authentication.Passwords.IPasswordResetSender, DevelopmentPasswordResetSender>();
 
         return services;
     }

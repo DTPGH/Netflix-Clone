@@ -4,6 +4,7 @@ namespace NetflixClone.Application.Common.Abstractions.Persistence;
 
 public interface IDeviceRepository
 {
+    Task<IReadOnlyList<Device>> GetUnrevokedByAccountAsync(int accountId, CancellationToken ct);
     Task<IReadOnlyList<DeviceSummary>> ListByUserAccountIdAsync(int userAccountId, CancellationToken cancellationToken = default);
     Task<Device?> GetByIdForAccountAsync(int userAccountId, int deviceId, CancellationToken cancellationToken = default);
     Task<Device?> GetByIdentifierHashAsync(int userAccountId, string identifierHash, CancellationToken cancellationToken = default);

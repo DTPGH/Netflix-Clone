@@ -1,0 +1,13 @@
+# Email confirmation links in local development
+
+Register and resend confirmation still generate their own email-confirmation token through the existing backend use cases. It is separate from the password-reset token. Database storage/expiry and API contracts are unchanged.
+
+DevelopmentEmailConfirmationSender now prints a complete HTTPS link to the API terminal: https://localhost:7012/confirm-email#accountId=...&token=... . The origin comes from EmailConfirmation:WebOrigin in API appsettings.Development.json; adjust it if the Web HTTPS port changes. The sender accepts only a localhost HTTPS origin and throws outside Development. It does not deliver a real email; replace it with a production email sender before deployment. The local test link is a secret and should not be shared.
+
+Register tells the user to check their email/open the development terminal link. Account-number and token inputs are removed from ConfirmEmail. On opening a valid link, the client page reads its fragment through email-confirmation.js, replaces the current URL without the fragment, and POSTs the existing UserAccountId/Token contract to api/auth/confirm-email. A fragment is not sent in the page GET request. Secrets remain only in transient browser memory/API POST and the development log; they are not written to browser credential storage or prerendered state.
+
+Successful confirmation offers a Login link; it does not automatically log in. Invalid or expired links offer resend. Unknown/absent links do not invoke confirmation. Network/5xx failures allow an explicit retry; the backend's existing confirmed-account behavior makes repeat confirmation safe. Resend keeps its generic account-existence response and prints a new link through the same sender. Reloading the cleaned page requires reopening the original link.
+
+Changed files: Infrastructure/Messaging/DevelopmentEmailConfirmationSender.cs, Api/appsettings.Development.json, Web.Client/Pages/Register.razor and ConfirmEmail.razor. Added Web.Client/wwwroot/js/email-confirmation.js, this document, tests/email-confirmation-link.mjs and tests/NetflixClone.Playback.Specs/EmailConfirmationLinkChecks.cs; updated the test harness Program.cs. No schema/generated EF/Application or API confirmation contracts changed.
+
+Verification: solution build, Playback.Specs sender checks, and node tests/email-confirmation-link.mjs. Manual browser checks: register; open full link from API terminal; verify success and cleaned address bar; sign in; resend and open new link; reject expired/replaced/malformed link; simulate a failed API request and retry; open /confirm-email directly to access resend. Browser/real SQL execution is not covered by these automated tests.

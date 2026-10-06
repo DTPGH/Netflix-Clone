@@ -18,6 +18,7 @@ public sealed class LoginUseCase : ILoginUseCase
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IDeviceIdentifierService _deviceIdentifierService;
     private readonly IRefreshTokenService _refreshTokenService;
+    private readonly IAuthenticationMutationScopeFactory _scopes;
 
     public LoginUseCase(
         IUserAccountRepository userAccountRepository,
@@ -28,7 +29,8 @@ public sealed class LoginUseCase : ILoginUseCase
         IDeviceRepository deviceRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IDeviceIdentifierService deviceIdentifierService,
-        IRefreshTokenService refreshTokenService)
+        IRefreshTokenService refreshTokenService,
+        IAuthenticationMutationScopeFactory scopes)
     {
         _userAccountRepository = userAccountRepository;
         _passwordHasher = passwordHasher;
@@ -39,11 +41,14 @@ public sealed class LoginUseCase : ILoginUseCase
         _refreshTokenRepository = refreshTokenRepository;
         _deviceIdentifierService = deviceIdentifierService;
         _refreshTokenService = refreshTokenService;
+        _scopes = scopes;
     }
 
     public async Task<Result<LoginResult>> ExecuteAsync(LoginCommand command, CancellationToken cancellationToken = default)
     {
         var email = command.Email.Trim().ToLowerInvariant();
+        await using var scope = await _scopes.BeginByEmailAsync(email, cancellationToken);
+        if (scope is null) return Result<LoginResult>.Failure(LoginErrors.InvalidCredentials);
         var account = await _userAccountRepository.GetByEmailAsync(email, cancellationToken);
 
         if (account is null)
@@ -77,6 +82,7 @@ public sealed class LoginUseCase : ILoginUseCase
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await scope.CommitAsync(cancellationToken);
 
             return Result<LoginResult>.Failure(account.LockoutEnd.HasValue
                 ? LoginErrors.TemporarilyLocked
@@ -92,14 +98,20 @@ public sealed class LoginUseCase : ILoginUseCase
         if (account.IsLocked)
         {
             if (failedLoginStateChanged)
+            {
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await scope.CommitAsync(cancellationToken);
+            }
             return Result<LoginResult>.Failure(LoginErrors.AccountLocked);
         }
 
         if (!account.EmailConfirmed)
         {
             if (failedLoginStateChanged)
+            {
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await scope.CommitAsync(cancellationToken);
+            }
             return Result<LoginResult>.Failure(LoginErrors.EmailNotConfirmed);
         }
 
@@ -107,7 +119,10 @@ public sealed class LoginUseCase : ILoginUseCase
         if (roles.Count == 0)
         {
             if (failedLoginStateChanged)
+            {
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await scope.CommitAsync(cancellationToken);
+            }
             return Result<LoginResult>.Failure(LoginErrors.RolesNotConfigured);
         }
 
@@ -153,6 +168,7 @@ public sealed class LoginUseCase : ILoginUseCase
         try
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await scope.CommitAsync(cancellationToken);
         }
         catch (PersistenceConcurrencyException)
         {

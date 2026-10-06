@@ -4,10 +4,13 @@ using NetflixClone.Application.Common.Exceptions;
 using NetflixClone.Application.Common.Results;
 namespace NetflixClone.Application.Authentication.Devices;
 public sealed class RevokeDeviceUseCase(
-    IDeviceRepository devices, IRefreshTokenRepository tokens, IClock clock, IUnitOfWork unitOfWork) : IRevokeDeviceUseCase
+    IDeviceRepository devices, IRefreshTokenRepository tokens, IClock clock, IUnitOfWork unitOfWork,
+    IAuthenticationMutationScopeFactory scopes) : IRevokeDeviceUseCase
 {
     public async Task<Result<RevokeDeviceResult>> ExecuteAsync(RevokeDeviceCommand command, CancellationToken cancellationToken = default)
     {
+        await using var scope = await scopes.BeginAsync(command.UserAccountId, cancellationToken);
+        if (scope is null) return Result<RevokeDeviceResult>.Failure(DeviceErrors.NotFound);
         var device = await devices.GetByIdForAccountAsync(command.UserAccountId, command.DeviceId, cancellationToken);
         if (device is null) return Result<RevokeDeviceResult>.Failure(DeviceErrors.NotFound);
         if (device.RevokedAt.HasValue) return Result<RevokeDeviceResult>.Success(new());
@@ -19,6 +22,7 @@ public sealed class RevokeDeviceUseCase(
         try
         {
             await unitOfWork.SaveChangesAsync(cancellationToken);
+            await scope.CommitAsync(cancellationToken);
         }
         catch (PersistenceConcurrencyException)
         {

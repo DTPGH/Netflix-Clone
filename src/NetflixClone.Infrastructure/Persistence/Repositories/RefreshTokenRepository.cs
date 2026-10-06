@@ -9,6 +9,8 @@ public sealed class RefreshTokenRepository : IRefreshTokenRepository
     private readonly NetflixCloneDbContext _dbContext;
 
     public RefreshTokenRepository(NetflixCloneDbContext dbContext) => _dbContext = dbContext;
+    public async Task<IReadOnlyList<RefreshToken>> GetUnrevokedByAccountAsync(int accountId, CancellationToken ct) =>
+        await _dbContext.RefreshTokens.Where(t => t.UserAccountId == accountId && t.RevokedAt == null).ToListAsync(ct);
 
     public async Task<IReadOnlyList<RefreshToken>> GetActiveByDeviceAsync(int userAccountId, int deviceId, DateTime utcNow, CancellationToken cancellationToken = default)
         => await _dbContext.RefreshTokens.Where(token =>

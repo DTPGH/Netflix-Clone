@@ -14,6 +14,9 @@ public sealed class AuthApiClient(HttpClient http)
     public Task<ApiResult<TokenReply>> RefreshAsync(string token) => SendAsync<TokenReply>(HttpMethod.Post, "refresh-token", new TokenPayload(token));
     public Task<ApiResult<object>> LogoutAsync(string token) => SendAsync<object>(HttpMethod.Post, "logout", new TokenPayload(token));
     public Task<ApiResult<MeReply>> MeAsync(string token) => SendAsync<MeReply>(HttpMethod.Get, "me", bearer: token);
+    public Task<ApiResult<object>> ForgotPasswordAsync(string email) => SendAsync<object>(HttpMethod.Post, "forgot-password", new { Email = email });
+    public Task<ApiResult<object>> ResetPasswordAsync(int accountId, string token, string password, string confirm) => SendAsync<object>(HttpMethod.Post, "reset-password", new { AccountId = accountId, Token = token, NewPassword = password, ConfirmPassword = confirm });
+    public Task<ApiResult<object>> ChangePasswordAsync(string bearer, string oldPassword, string password, string confirm) => SendAsync<object>(HttpMethod.Post, "change-password", new { OldPassword = oldPassword, NewPassword = password, ConfirmPassword = confirm }, bearer);
 
     private async Task<ApiResult<T>> SendAsync<T>(HttpMethod method, string path, object? body = null, string? bearer = null)
     {
@@ -35,6 +38,10 @@ public sealed class AuthApiClient(HttpClient http)
                 catch (JsonException) { }
                 var message = code switch
                 {
+                    "Auth.Password.InvalidReset" => "This reset link is invalid or expired. Request a new one.",
+                    "Auth.Password.WrongPassword" => "The current password is incorrect.",
+                    "Auth.Password.SamePassword" => "Choose a password different from your current password.",
+                    "Auth.Password.ConcurrentChange" => "Your password data changed. Please try again.",
                     "Auth.Login.InvalidCredentials" => "The email or password is incorrect.",
                     "Auth.Login.AccountLocked" => "This account is locked. Please contact support.",
                     "Auth.Login.EmailNotConfirmed" => "Please confirm your email before signing in.",

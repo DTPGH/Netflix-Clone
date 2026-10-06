@@ -195,6 +195,48 @@ public sealed class AuthSession : AuthenticationStateProvider, IDisposable
         return true;
     }
 
+    // Hold the browser rotation lease through the server commit and local cleanup.
+    // Do not route this through SendAuthenticatedAsync: successful revocation intentionally ends this session.
+    public async Task<ApiResult<object>> RevokeSessionsAsync(Func<string?, Task<ApiResult<object>>> operation, bool requireAuthentication)
+    {
+        if (IsLoggingOut) return new(default, "A sign-out operation is already running.", 409);
+        if (requireAuthentication && !await EnsureSessionAsync()) return new(default, "Please sign in again.", 401);
+        await InitializeAsync();
+        if (IsLoggingOut || _disposed) return new(default, "The session changed. Please try again.", 401);
+        IsLoggingOut = true; ++_version; StopRefreshSchedule();
+        ApiResult<object>? result = null;
+        try
+        {
+            await using var lease = StorageReady ? await _store.AcquireAsync() : null;
+            result = await operation(_accessToken);
+            // A lost response can hide a successful commit. Never restore that uncertain session.
+            if (result.Success || result.Status is 0 or 401 || result.Status >= 500)
+            {
+                Notice = result.Success ? "Device sessions were revoked. Please sign in again."
+                    : "The result could not be confirmed. Sign in again before retrying.";
+                _logoutNotice = Notice;
+                try
+                {
+                    if (StorageReady) { await _store.ChangeEpochAsync(); await _store.ClearAsync(); }
+                }
+                finally { SetAnonymous(); }
+            }
+            return result;
+        }
+        catch (JSException)
+        {
+            SetAnonymous();
+            Notice = "Session storage could not be cleared. Clear this site's browser data before leaving a shared device.";
+            return result is { Success: true } ? result : new(default, "The result could not be confirmed. Sign in again and check your devices.", 0);
+        }
+        finally
+        {
+            IsLoggingOut = false;
+            if (IsAuthenticated) ScheduleRefresh();
+            Changed?.Invoke();
+        }
+    }
+
     public async Task LogoutAsync()
     {
         if (IsLoggingOut) return;

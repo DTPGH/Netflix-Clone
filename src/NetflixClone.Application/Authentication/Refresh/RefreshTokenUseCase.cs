@@ -15,6 +15,7 @@ public sealed class RefreshTokenUseCase : IRefreshTokenUseCase
     private readonly IAccessTokenGenerator _accessTokenGenerator;
     private readonly IClock _clock;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAuthenticationMutationScopeFactory _scopes;
 
     public RefreshTokenUseCase(
         IRefreshTokenRepository refreshTokenRepository,
@@ -22,7 +23,8 @@ public sealed class RefreshTokenUseCase : IRefreshTokenUseCase
         IUserAccountRepository userAccountRepository,
         IAccessTokenGenerator accessTokenGenerator,
         IClock clock,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IAuthenticationMutationScopeFactory scopes)
     {
         _refreshTokenRepository = refreshTokenRepository;
         _refreshTokenService = refreshTokenService;
@@ -30,6 +32,7 @@ public sealed class RefreshTokenUseCase : IRefreshTokenUseCase
         _accessTokenGenerator = accessTokenGenerator;
         _clock = clock;
         _unitOfWork = unitOfWork;
+        _scopes = scopes;
     }
 
     public async Task<Result<RefreshTokenResult>> ExecuteAsync(RefreshTokenCommand command, CancellationToken cancellationToken = default)
@@ -40,6 +43,8 @@ public sealed class RefreshTokenUseCase : IRefreshTokenUseCase
             return Result<RefreshTokenResult>.Failure(RefreshTokenErrors.InvalidRefreshToken);
         }
 
+        await using var scope = await _scopes.BeginByRefreshTokenHashAsync(hash, cancellationToken);
+        if (scope is null) return Result<RefreshTokenResult>.Failure(RefreshTokenErrors.InvalidRefreshToken);
         var oldToken = await _refreshTokenRepository.GetByHashAsync(hash, cancellationToken);
         var utcNow = _clock.UtcNow;
         if (oldToken is null || oldToken.ReplacedByTokenId.HasValue ||
@@ -85,6 +90,7 @@ public sealed class RefreshTokenUseCase : IRefreshTokenUseCase
         try
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await scope.CommitAsync(cancellationToken);
         }
         catch (PersistenceConcurrencyException)
         {

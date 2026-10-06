@@ -10,6 +10,8 @@ public sealed class DeviceRepository : IDeviceRepository
     private readonly NetflixCloneDbContext _dbContext;
 
     public DeviceRepository(NetflixCloneDbContext dbContext) => _dbContext = dbContext;
+    public async Task<IReadOnlyList<Device>> GetUnrevokedByAccountAsync(int accountId, CancellationToken ct) =>
+        await _dbContext.Devices.Where(d => d.UserAccountId == accountId && d.RevokedAt == null).ToListAsync(ct);
 
     public async Task<IReadOnlyList<DeviceSummary>> ListByUserAccountIdAsync(int userAccountId, CancellationToken cancellationToken = default)
     {

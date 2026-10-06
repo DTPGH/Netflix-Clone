@@ -7,6 +7,12 @@ public partial class NetflixCloneDbContext
 {
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<UserAccount>(entity =>
+        {
+            entity.Property(a => a.PasswordHash).IsConcurrencyToken();
+            entity.Property(a => a.PasswordResetTokenHash).IsConcurrencyToken();
+            entity.Property(a => a.PasswordResetTokenExpiresAt).IsConcurrencyToken();
+        });
         modelBuilder.Entity<ViewingSession>(entity =>
         {
             entity.Property<Guid?>("ClientSessionId");

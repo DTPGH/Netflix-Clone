@@ -13,6 +13,8 @@ public sealed class DevicesApiClient(HttpClient http, AuthSession session)
 
     public Task<ApiResult<object>> RevokeAsync(int deviceId, CancellationToken ct = default)
         => SendAuthenticatedAsync<object>(HttpMethod.Post, $"api/auth/devices/{deviceId}/revoke", false, ct);
+    public Task<ApiResult<object>> RevokeAllAsync(CancellationToken ct = default) =>
+        session.RevokeSessionsAsync(token => SendAsync<object>(HttpMethod.Post, "api/auth/devices/revoke-all", token!, ct), requireAuthentication: true);
 
     private async Task<ApiResult<T>> SendAuthenticatedAsync<T>(HttpMethod method, string path, bool retry, CancellationToken ct)
     {

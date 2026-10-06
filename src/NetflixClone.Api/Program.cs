@@ -100,6 +100,7 @@ builder.Services.AddCors(options => options.AddPolicy("WebClient", policy =>
 
 builder.Services.AddScoped<IRegisterAccountUseCase, RegisterAccountUseCase>();
 builder.Services.AddScoped<ILoginUseCase, LoginUseCase>();
+builder.Services.AddScoped<NetflixClone.Application.Authentication.Passwords.IPasswordUseCase, NetflixClone.Application.Authentication.Passwords.PasswordUseCase>();
 builder.Services.AddScoped<IRefreshTokenUseCase, RefreshTokenUseCase>();
 builder.Services.AddScoped<ILogoutUseCase, LogoutUseCase>();
 builder.Services.AddScoped<IBrowseMoviesUseCase, BrowseMoviesUseCase>();
@@ -119,6 +120,7 @@ builder.Services.AddScoped<IAdminMediaUploadUseCase, AdminMediaUploadUseCase>();
 builder.Services.AddScoped<IListGenresUseCase, ListGenresUseCase>();
 builder.Services.AddScoped<IListDevicesUseCase, ListDevicesUseCase>();
 builder.Services.AddScoped<IRevokeDeviceUseCase, RevokeDeviceUseCase>();
+builder.Services.AddScoped<IRevokeAllDevicesUseCase, RevokeAllDevicesUseCase>();
 builder.Services.AddScoped<IListProfilesUseCase, ListProfilesUseCase>();
 builder.Services.AddScoped<IListMyListUseCase, ListMyListUseCase>();
 builder.Services.AddScoped<IGetRatingUseCase, GetRatingUseCase>();
