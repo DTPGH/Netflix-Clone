@@ -18,6 +18,7 @@ builder.Services.AddScoped<PersonalizationApiClient>();
 builder.Services.AddScoped<WatchHistoryApiClient>();
 builder.Services.AddScoped<ViewingSessionsApiClient>();
 builder.Services.AddScoped<AdminViewingReportsApiClient>();
+builder.Services.AddScoped<AdminDashboardApiClient>();
 builder.Services.AddScoped<SubscriptionsApiClient>();
 builder.Services.AddScoped<SubscriptionPurchaseDraftStore>();
 builder.Services.AddScoped<DevicesApiClient>();

@@ -1,0 +1,76 @@
+@page "/admin"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject AuthSession Session
+@inject AdminDashboardApiClient Api
+<PageTitle>Admin dashboard · Netflix Clone</PageTitle>
+<AuthShell>
+    <p class="eyebrow">ADMIN OVERVIEW</p><h1 class="display-5 fw-bold">Dashboard</h1>
+    <p class="text-muted">Simulated payments and demo playback activity.</p>
+    @if (!ready) { <p role="status">Checking administrator access…</p> }
+    else if (!isAdmin) { <p>Administrator access required.</p> }
+    else
+    {
+        <EditForm Model="filter" OnValidSubmit="Load" FormName="dashboard-filter" class="auth-panel p-4 mb-4">
+            <div class="row g-3 align-items-end">
+                <div class="col-sm-4"><label for="dashboard-from" class="form-label">From date</label><InputDate id="dashboard-from" class="form-control" @bind-Value="filter.From" disabled="@loading" /></div>
+                <div class="col-sm-4"><label for="dashboard-through" class="form-label">Through date</label><InputDate id="dashboard-through" class="form-control" @bind-Value="filter.Through" disabled="@loading" /></div>
+                <div class="col-sm-4"><button class="btn btn-danger w-100" disabled="@loading">@(loading ? "Loading…" : "Show dashboard")</button></div>
+            </div><p class="small text-muted mt-3 mb-0">Vietnam dates (UTC+7), including both days. Up to 366 days, through today. Data is cached for two minutes.</p>
+        </EditForm>
+        @if (error is not null) { <div class="alert alert-warning" role="alert">@error</div> }
+        @if (data is not null)
+        {
+            <p class="small text-muted">Period: @data.Period.From.ToString("dd/MM/yyyy") – @data.Period.Through.ToString("dd/MM/yyyy") · Generated @data.GeneratedAtUtc.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss") (UTC+7)</p>
+            <div class="row g-3 mb-4">
+                @foreach (var card in Cards()) { <div class="col-12 col-sm-6 col-xl-3"><section class="auth-panel p-4 h-100"><h2 class="h6 text-muted">@card.Label</h2><p class="h3 mb-0">@card.Value</p></section></div> }
+            </div>
+            <p class="small text-muted">Effective accounts are counted at generation time; the other cards use the selected period.</p>
+            <div class="row g-4 mb-4">
+                <div class="col-12 col-lg-6"><DashboardChart Title="Simulated revenue" Unit="VND" Dates="dates" Values="revenues" /></div>
+                <div class="col-12 col-lg-6"><DashboardChart Title="Qualified views" Unit="Views ≥120s" Dates="dates" Values="views" /></div>
+            </div>
+            <section class="auth-panel p-3 p-md-4"><h2 class="h4">Top 10 movies</h2>
+                <p class="small text-muted">Ranked by qualified views, then movie ID. Average time and finish rate use qualified sessions only. Replays count as new views. Deleted movies remain in historical totals.</p>
+                @if (data.TopMovies.Length == 0) { <p>No qualified views in this period.</p> }
+                else { <div class="table-responsive"><table class="table table-dark align-middle"><thead><tr><th>Movie</th><th>Qualified views</th><th>Average watch time</th><th>Reached video end</th></tr></thead><tbody>
+                    @foreach (var movie in data.TopMovies) { <tr><td>@movie.Title @if (movie.IsDeleted) { <span class="badge text-bg-secondary">Deleted</span> }</td><td>@movie.QualifiedViews.ToString("N0")</td><td>@((movie.AverageWatchedSeconds / 60).ToString("N1")) min</td><td>@movie.FinishedPercent.ToString("N1")%</td></tr> }
+                </tbody></table></div> }
+                <p class="small text-muted mb-0">Views belong to their session start date. Recorded time may continue beyond the selected period. Reaching the end does not prove the whole movie was watched.</p>
+            </section>
+        }
+    }
+</AuthShell>
+@code {
+    private sealed class Filter { public DateTime From { get; set; } = DateTime.UtcNow.AddHours(7).Date.AddDays(-29); public DateTime Through { get; set; } = DateTime.UtcNow.AddHours(7).Date; }
+    private readonly Filter filter = new();
+    private readonly CancellationTokenSource lifetime = new();
+    private bool ready, isAdmin, loading, disposed;
+    private int generation;
+    private string? error;
+    private AdminDashboardReply? data;
+    private DateOnly[] dates = []; private decimal[] revenues = [], views = [];
+    protected override async Task OnInitializedAsync() { Session.Changed += Changed; await Session.InitializeAsync(); await Access(); }
+    private void Changed() => _ = InvokeAsync(async () => { if (!disposed) { await Access(); StateHasChanged(); } });
+    private async Task Access()
+    {
+        var allowed = Session.IsAuthenticated && (await Session.GetAuthenticationStateAsync()).User.IsInRole("Admin"); ready = true;
+        if (!allowed) { isAdmin = false; data = null; generation++; loading = false; return; }
+        if (!isAdmin) { isAdmin = true; await Load(); }
+    }
+    private async Task Load()
+    {
+        if (disposed || loading || !isAdmin) return;
+        var from = DateOnly.FromDateTime(filter.From); var through = DateOnly.FromDateTime(filter.Through);
+        if (from.Year < 2000 || through < from || through > DateOnly.FromDateTime(DateTime.UtcNow.AddHours(7)) || through.DayNumber - from.DayNumber >= 366)
+        { error = "Choose at most 366 days through today."; return; }
+        var version = ++generation; loading = true; error = null; data = null;
+        var result = await Api.GetAsync(from, through, lifetime.Token);
+        if (disposed || version != generation) return;
+        loading = false;
+        if (!result.Success) { error = result.Error; return; }
+        data = result.Value!; dates = data.Days.Select(d => d.Date).ToArray(); revenues = data.Days.Select(d => d.SimulatedRevenue).ToArray(); views = data.Days.Select(d => (decimal)d.QualifiedViews).ToArray();
+    }
+    private IEnumerable<(string Label, string Value)> Cards() => new[] { ("New accounts", data!.Cards.NewAccounts.ToString("N0")), ("Accounts with effective plans", data.Cards.EffectiveAccounts.ToString("N0")), ("Simulated revenue · VND", data.Cards.SimulatedRevenue.ToString("N0")), ("Qualified views ≥120s", data.Cards.QualifiedViews.ToString("N0")) };
+    public void Dispose() { disposed = true; generation++; Session.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
+}

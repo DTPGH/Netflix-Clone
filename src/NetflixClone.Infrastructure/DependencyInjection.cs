@@ -43,6 +43,8 @@ public static class DependencyInjection
         services.AddScoped<IWatchHistoryRepository, WatchHistoryRepository>();
         services.AddScoped<IViewingSessionRepository, ViewingSessionRepository>();
         services.AddScoped<IAdminViewingReportQueries, AdminViewingReportQueries>();
+        services.AddMemoryCache();
+        services.AddScoped<NetflixClone.Application.Admin.Dashboard.IAdminDashboardQueries, AdminDashboardQueries>();
         services.AddScoped<IViewingReportExporter, ViewingReportExcelExporter>();
         services.AddScoped<IViewingSessionScopeFactory, ViewingSessionScopeFactory>();
         services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();

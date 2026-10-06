@@ -108,6 +108,7 @@ builder.Services.AddScoped<IGetMoviePlaybackUseCase, GetMoviePlaybackUseCase>();
 builder.Services.AddScoped<IWatchProgressUseCase, WatchProgressUseCase>();
 builder.Services.AddScoped<IViewingSessionUseCase, ViewingSessionUseCase>();
 builder.Services.AddScoped<IAdminViewingReportUseCase, AdminViewingReportUseCase>();
+builder.Services.AddScoped<NetflixClone.Application.Admin.Dashboard.IAdminDashboardUseCase, NetflixClone.Application.Admin.Dashboard.AdminDashboardUseCase>();
 builder.Services.AddScoped<ISubscriptionUseCase, SubscriptionUseCase>();
 builder.Services.AddScoped<IAdminMovieManagementUseCase, AdminMovieManagementUseCase>();
 builder.Services.AddScoped<NetflixClone.Application.Admin.Plans.IAdminPlanUseCase, NetflixClone.Application.Admin.Plans.AdminPlanUseCase>();
