@@ -437,7 +437,12 @@ public partial class NetflixCloneDbContext : DbContext
 
             entity.HasIndex(e => e.StartedAt, "IX_ViewingSessions_StartedAt");
 
+            entity.HasIndex(e => new { e.DeviceId, e.ClientSessionId }, "UX_ViewingSessions_Device_ClientSession")
+                .IsUnique()
+                .HasFilter("([ClientSessionId] IS NOT NULL)");
+
             entity.Property(e => e.EndReason).HasMaxLength(30);
+            entity.Property(e => e.LastCheckpointAtUtc).HasDefaultValueSql("(sysutcdatetime())", "DF_ViewingSessions_LastCheckpointAtUtc");
             entity.Property(e => e.Quality).HasMaxLength(20);
             entity.Property(e => e.StartedAt).HasDefaultValueSql("(sysdatetime())");
 

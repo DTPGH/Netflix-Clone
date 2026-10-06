@@ -100,7 +100,9 @@ Table Profiles {
 
   MaturityLevel tinyint [not null, default: 18, note: 'hồ sơ Kids để 13; lọc WHERE Movies.MinAge <= MaturityLevel']
 
-  PinHash nvarchar(500)
+  PinHash nvarchar(500) [note: 'Optional BCrypt hash of exactly four ASCII digits; NULL means no PIN. Never store or return the raw PIN.']
+  PinFailedAttempts int [not null, default: 0, note: 'Persistent consecutive failed PIN attempts, independent of account login failures. Reset on successful unlock or PIN management.']
+  PinLockoutEnd datetime2 [note: 'UTC expiry of temporary profile PIN lockout; NULL means no temporary PIN lockout.']
   OnboardingCompleted bit [not null, default: 0]
 
   IsDeleted bit [not null, default: 0]
@@ -116,6 +118,7 @@ Table Profiles {
 
   Checks {
     `(IsDeleted = 0 AND DeletedAt IS NULL) OR (IsDeleted = 1 AND DeletedAt IS NOT NULL)` [name: 'CK_Profiles_SoftDeleteState']
+    `PinFailedAttempts >= 0` [name: 'CK_Profiles_PinFailedAttempts']
   }
 
   Note: 'Viewing/personalization identity. PIN is optional and must be stored as a hash when configured. Profile deletion uses soft delete: active profiles have IsDeleted = 0 and DeletedAt = NULL; deleted profiles remain in the database for historical/analytics integrity but cannot be selected or used for new viewing/personalization actions. Each account may have at most 5 active Profiles (IsDeleted = 0); soft-deleted Profiles do not count. The limit is independent of subscription or plan and requires concurrency-safe application enforcement.'

@@ -25,6 +25,14 @@ public partial class ViewingSession
 
     public string? EndReason { get; set; }
 
+    public Guid? ClientSessionId { get; set; }
+
+    public long CheckpointSequence { get; set; }
+
+    public long WatchedMilliseconds { get; set; }
+
+    public DateTime LastCheckpointAtUtc { get; set; }
+
     public virtual Device Device { get; set; } = null!;
 
     public virtual Movie Movie { get; set; } = null!;

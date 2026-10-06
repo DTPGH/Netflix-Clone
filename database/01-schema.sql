@@ -72,12 +72,15 @@ CREATE TABLE [dbo].[Profiles] (
   [IsKids] bit NOT NULL DEFAULT (0),
   [MaturityLevel] tinyint NOT NULL DEFAULT (18),
   [PinHash] nvarchar(500),
+  [PinFailedAttempts] int NOT NULL CONSTRAINT [DF_Profiles_PinFailedAttempts] DEFAULT (0),
+  [PinLockoutEnd] datetime2,
   [OnboardingCompleted] bit NOT NULL DEFAULT (0),
   [IsDeleted] bit NOT NULL DEFAULT (0),
   [DeletedAt] datetime2,
   [CreatedAt] datetime2 NOT NULL DEFAULT (sysdatetime()),
   [UpdatedAt] datetime2 NOT NULL DEFAULT (sysdatetime()),
   CONSTRAINT [CK_Profiles_SoftDeleteState] CHECK ((IsDeleted = 0 AND DeletedAt IS NULL) OR (IsDeleted = 1 AND DeletedAt IS NOT NULL)),
+  CONSTRAINT [CK_Profiles_PinFailedAttempts] CHECK (PinFailedAttempts >= 0),
     CONSTRAINT [PK_Profiles] PRIMARY KEY ([Id])
 )
 GO

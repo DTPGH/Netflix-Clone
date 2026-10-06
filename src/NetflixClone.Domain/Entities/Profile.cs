@@ -29,6 +29,10 @@ public partial class Profile
 
     public DateTime UpdatedAt { get; set; }
 
+    public int PinFailedAttempts { get; set; }
+
+    public DateTime? PinLockoutEnd { get; set; }
+
     public virtual ICollection<MyListItem> MyListItems { get; set; } = new List<MyListItem>();
 
     public virtual ICollection<ProfilePreference> ProfilePreferences { get; set; } = new List<ProfilePreference>();
