@@ -9,6 +9,7 @@ namespace NetflixClone.Api.Controllers;
 [Authorize]
 [Route("api/profiles/{profileId:int:min(1)}")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+[NetflixClone.Api.Security.RequireProfileAccess]
 public sealed class WatchHistoryController(IWatchProgressUseCase useCase) : ControllerBase
 {
     [HttpGet("watch-history")]

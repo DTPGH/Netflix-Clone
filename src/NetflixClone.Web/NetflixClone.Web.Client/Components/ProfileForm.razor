@@ -13,8 +13,13 @@
                 <InputCheckbox id="profile-kids" class="form-check-input" @bind-Value="Model.IsKids" />
                 <label class="form-check-label" for="profile-kids">Kids profile</label>
             </div>
-            <p class="form-text mb-4">Kids profiles use maturity level 13. Other profiles use level 18. PIN protection
-                is not available yet.</p>
+            <p class="form-text mb-4">Kids profiles use maturity level 13. Other profiles use level 18.</p>
+            <div class="mb-4">
+                <label class="form-label" for="profile-account-password">Account password</label>
+                <InputText id="profile-account-password" type="password" class="form-control" @bind-Value="Model.AccountPassword" autocomplete="current-password" />
+                <ValidationMessage For="() => Model.AccountPassword" />
+                <div class="form-text">Confirm that you can manage this account's profiles.</div>
+            </div>
                 <div class="d-flex flex-wrap gap-2">
                     <button type="submit" class="btn btn-danger">@(Busy ? "Saving…" : Editing ? "Save changes" : "Create profile")</button>
                 </div>

@@ -27,11 +27,29 @@
                             <span class="profile-avatar mb-3" aria-hidden="true">@(profile.IsKids ? "☺" : "●")</span>
                             <span class="h4 d-block text-break">@profile.Name</span>
                             <span class="text-muted d-block">@(profile.IsKids ? "Kids profile" : "Standard profile")</span>
+                            @if (profile.HasPin) { <span class="badge text-bg-secondary mt-2">PIN protected</span> }
                             @if (Active.Selected?.ProfileId == profile.ProfileId) { <span class="badge text-bg-secondary mt-2">Selected</span> }
                         </button>
                     </div>
                 }
             </div>
+            @if (unlocking is not null)
+            {
+                <section class="auth-panel p-4 mt-4" aria-labelledby="unlock-title">
+                    <h2 id="unlock-title" class="h4">Unlock @unlocking.Name</h2>
+                    <EditForm Model="pinForm" OnValidSubmit="Unlock" FormName="profile-unlock">
+                        <DataAnnotationsValidator />
+                        <label class="form-label" for="unlock-pin">4-digit PIN</label>
+                        <InputText id="unlock-pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" class="form-control mb-2" @bind-Value="pinForm.Pin" />
+                        <ValidationMessage For="() => pinForm.Pin" />
+                        <div class="d-flex gap-2 mt-3">
+                            <button class="btn btn-danger" disabled="@busy" type="submit">@(busy ? "Unlocking…" : "Unlock profile")</button>
+                            <button class="btn btn-outline-light" disabled="@busy" type="button" @onclick="CancelUnlock">Cancel</button>
+                        </div>
+                    </EditForm>
+                    <p class="form-text mt-3">Forgot your PIN? Use your account password in Manage profiles to change or remove it.</p>
+                </section>
+            }
             @if (busy) { <p class="mt-3" role="status">Selecting profile…</p> }
         }
     </div>
@@ -39,6 +57,8 @@
 @code {
     [SupplyParameterFromQuery(Name = "returnTo")] public string? ReturnTo { get; set; }
     private List<ProfileReply> profiles = [];
+    private ProfileReply? unlocking;
+    private ProfileUnlockFormModel pinForm = new();
     private string? error;
     private bool loading, busy, disposed;
     private int requestVersion;
@@ -59,6 +79,7 @@
         if (disposed) return;
         var request = ++requestVersion; var version = Active.Version;
         lastVersion = version; profiles = []; error = null; loading = true;
+        CancelUnlock();
         if (!Session.IsAuthenticated) { loading = false; return; }
         var subscription = await Subscriptions.CurrentAsync(lifetime.Token);
         if (disposed || request != requestVersion || version != Active.Version) return;
@@ -77,10 +98,21 @@
     private async Task Choose(int id)
     {
         if (busy) return;
+        var profile = profiles.SingleOrDefault(p => p.ProfileId == id);
+        if (profile is null) return;
+        if (profile.HasPin) { unlocking = profile; pinForm = new(); error = null; return; }
+        CancelUnlock();
+        await ChooseUnlocked(id, null);
+    }
+    private Task Unlock() => unlocking is null ? Task.CompletedTask : ChooseUnlocked(unlocking.ProfileId, pinForm.Pin);
+    private void CancelUnlock() { unlocking = null; pinForm = new(); }
+    private async Task ChooseUnlocked(int id, string? pin)
+    {
         busy = true;
         try
         {
-            error = await Active.SelectAsync(id);
+            error = await Active.SelectAsync(id, pin);
+            pinForm.Pin = "";
             if (disposed || error is not null) return;
             var destination = Active.Selected?.OnboardingCompleted == false
                 ? ProfileNavigation.Onboarding(ReturnTo) : ProfileNavigation.Destination(ReturnTo);
@@ -88,5 +120,5 @@
         }
         finally { if (!disposed) busy = false; }
     }
-    public void Dispose() { disposed = true; Active.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
+    public void Dispose() { disposed = true; CancelUnlock(); Active.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); }
 }

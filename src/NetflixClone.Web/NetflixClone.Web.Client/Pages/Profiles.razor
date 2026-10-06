@@ -39,7 +39,7 @@
                 <span class="text-muted">@(loaded ? $"{profiles.Count} / 5 profiles" : "Your profiles")</span>
                 <div class="d-flex flex-wrap gap-2">
                     <button class="btn btn-outline-light" disabled="@(busy || loading)" @onclick="Reload">@(loading ? "Loading…" : "Reload list")</button>
-                    <button class="btn btn-danger" disabled="@(busy || loading || !loaded || profiles.Count >= 5 || form is not null || needsReload)" @onclick="Add">Add profile</button>
+                    <button class="btn btn-danger" disabled="@(busy || loading || !loaded || profiles.Count >= 5 || form is not null || pinTarget is not null || needsReload)" @onclick="Add">Add profile</button>
                 </div>
             </div>
             @if (loaded && profiles.Count >= 5)
@@ -50,6 +50,40 @@
             {
                 <ProfileForm @key="form" Model="form" Editing="@(editingId is not null)" Busy="busy"
                     Disabled="@(busy || loading || needsReload)" Submit="Save" Cancel="CloseEditor" />
+            }
+            @if (pinTarget is not null)
+            {
+                <section class="auth-panel p-4 mb-4" aria-labelledby="pin-editor-title">
+                    <h2 id="pin-editor-title" class="h4">Profile PIN · @pinTarget.Name</h2>
+                    <p class="text-muted">A PIN is optional. Your account password allows you to set, change or remove it.</p>
+                    <EditForm Model="pinForm" OnValidSubmit="SavePin" FormName="profile-pin-editor">
+                        <DataAnnotationsValidator />
+                        <fieldset disabled="@(busy || loading || needsReload)">
+                            <div class="mb-3">
+                                <label class="form-label" for="pin-account-password">Account password</label>
+                                <InputText id="pin-account-password" type="password" autocomplete="current-password" class="form-control" @bind-Value="pinForm.AccountPassword" />
+                                <ValidationMessage For="() => pinForm.AccountPassword" />
+                            </div>
+                            @if (pinTarget.HasPin)
+                            {
+                                <div class="form-check mb-3">
+                                    <InputCheckbox id="remove-profile-pin" class="form-check-input" @bind-Value="pinForm.Remove" />
+                                    <label class="form-check-label" for="remove-profile-pin">Remove PIN protection</label>
+                                </div>
+                            }
+                            @if (!pinForm.Remove)
+                            {
+                                <div class="mb-3">
+                                    <label class="form-label" for="new-profile-pin">New 4-digit PIN</label>
+                                    <InputText id="new-profile-pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" class="form-control" @bind-Value="pinForm.Pin" />
+                                    <ValidationMessage For="() => pinForm.Pin" />
+                                </div>
+                            }
+                            <button class="btn btn-danger" type="submit">@(busy ? "Saving…" : "Save PIN settings")</button>
+                        </fieldset>
+                        <button class="btn btn-outline-light mt-2" type="button" disabled="@busy" @onclick="ClosePinEditor">Cancel</button>
+                    </EditForm>
+                </section>
             }
             @if (loading)
             {
@@ -75,23 +109,27 @@
                                     <div class="min-width-0">
                                         <h2 class="h4 text-break mb-1">@profile.Name</h2>
                                         <span class="text-muted">@(profile.IsKids ? "Kids profile" : "Standard profile")</span>
+                                        @if (profile.HasPin) { <span class="badge text-bg-secondary ms-2">PIN protected</span> }
                                     </div>
                                 </div>
                                 @if (deleteId == profile.ProfileId)
                                 {
                                     <div class="border-top pt-3">
                                         <p>Delete <strong class="text-break">@profile.Name</strong>? It will be removed from your profile list.</p>
+                                        <label class="form-label" for="delete-profile-password">Account password</label>
+                                        <input id="delete-profile-password" class="form-control mb-3" type="password" autocomplete="current-password" @bind="deletePassword" disabled="@busy" />
                                         <div class="d-flex flex-wrap gap-2">
-                                            <button class="btn btn-danger" disabled="@(busy || loading || needsReload)" @onclick="() => Delete(profile.ProfileId)">@(busy ? "Deleting…" : "Confirm delete")</button>
-                                            <button class="btn btn-outline-light" disabled="@busy" @onclick="() => deleteId = null">Cancel</button>
+                                            <button class="btn btn-danger" disabled="@(busy || loading || needsReload || string.IsNullOrEmpty(deletePassword))" @onclick="() => Delete(profile.ProfileId)">@(busy ? "Deleting…" : "Confirm delete")</button>
+                                            <button class="btn btn-outline-light" disabled="@busy" @onclick="CancelDelete">Cancel</button>
                                         </div>
                                     </div>
                                 }
                                 else
                                 {
                                     <div class="d-flex flex-wrap gap-2">
-                                        <button class="btn btn-outline-light" disabled="@(busy || loading || form is not null || needsReload)" aria-label="@($"Edit profile {profile.Name}")" @onclick="() => Edit(profile)">Edit</button>
-                                        <button class="btn btn-outline-light" disabled="@(busy || loading || form is not null || needsReload)" aria-label="@($"Delete profile {profile.Name}")" @onclick="() => ConfirmDelete(profile.ProfileId)">Delete</button>
+                                        <button class="btn btn-outline-light" disabled="@(busy || loading || form is not null || pinTarget is not null || needsReload)" aria-label="@($"Edit profile {profile.Name}")" @onclick="() => Edit(profile)">Edit</button>
+                                        <button class="btn btn-outline-light" disabled="@(busy || loading || form is not null || pinTarget is not null || needsReload)" @onclick="() => EditPin(profile)">Manage PIN</button>
+                                        <button class="btn btn-outline-light" disabled="@(busy || loading || form is not null || pinTarget is not null || needsReload)" aria-label="@($"Delete profile {profile.Name}")" @onclick="() => ConfirmDelete(profile.ProfileId)">Delete</button>
                                     </div>
                                 }
                             </article>
@@ -106,6 +144,9 @@
 @code {
     private List<ProfileReply> profiles = [];
     private ProfileFormModel? form;
+    private ProfilePinFormModel pinForm = new();
+    private ProfileReply? pinTarget;
+    private string deletePassword = "";
     private int? editingId, deleteId;
     private string? accountId, error, notice;
     private bool ready, loaded, loading, busy, needsReload, disposed;
@@ -137,6 +178,7 @@
         generation++;
         requests.Cancel(); requests.Dispose(); requests = new();
         profiles = []; form = null; editingId = deleteId = null;
+        ClosePinEditor(); deletePassword = "";
         loaded = loading = busy = needsReload = false; error = notice = null;
         if (current is not null) await Load();
     }
@@ -180,7 +222,10 @@
         form = new() { Name = profile.Name, IsKids = profile.IsKids };
         editingId = profile.ProfileId; deleteId = null; error = notice = null;
     }
-    private void ConfirmDelete(int id) { deleteId = id; error = notice = null; }
+    private void ConfirmDelete(int id) { deletePassword = ""; deleteId = id; error = notice = null; }
+    private void CancelDelete() { deleteId = null; deletePassword = ""; }
+    private void EditPin(ProfileReply profile) { CancelDelete(); pinTarget = profile; pinForm = new(); error = notice = null; }
+    private void ClosePinEditor() { pinTarget = null; pinForm = new(); }
     private void CloseEditor() { form = null; editingId = null; needsReload = !loaded || error is not null; notice = null; }
 
     private async Task Save()
@@ -188,7 +233,7 @@
         if (busy || needsReload || form is null) return;
         var version = generation;
         var id = editingId;
-        var payload = new ProfilePayload(form.Name.Trim(), form.IsKids);
+        var payload = new ProfilePayload(form.Name.Trim(), form.IsKids, form.AccountPassword);
         busy = true; error = notice = null;
         try
         {
@@ -203,7 +248,7 @@
             form = null; editingId = null;
             notice = id is null ? "Profile created." : "Profile updated.";
         }
-        finally { if (!disposed && version == generation) busy = false; }
+        finally { if (!disposed && version == generation) { busy = false; if (form is not null) form.AccountPassword = ""; } }
     }
 
     private async Task Delete(int id)
@@ -213,7 +258,8 @@
         busy = true; error = notice = null;
         try
         {
-            var reply = await Api.DeleteAsync(id, requests.Token);
+            var reply = await Api.DeleteAsync(id, deletePassword, requests.Token);
+            deletePassword = "";
             if (!IsCurrent(version)) return;
             if (!reply.Success) { await MutationFailed(reply.Error, reply.Code, reply.Status); return; }
             profiles.RemoveAll(p => p.ProfileId == id); deleteId = null;
@@ -234,9 +280,30 @@
         }
     }
 
+    private async Task SavePin()
+    {
+        if (busy || needsReload || pinTarget is null) return;
+        var version = generation; var id = pinTarget.ProfileId; var submitted = pinForm;
+        busy = true; error = notice = null;
+        try
+        {
+            var reply = submitted.Remove ? await Api.RemovePinAsync(id, submitted.AccountPassword, requests.Token)
+                : await Api.SetPinAsync(id, submitted.AccountPassword, submitted.Pin, requests.Token);
+            submitted.AccountPassword = submitted.Pin = "";
+            if (!IsCurrent(version)) return;
+            if (!reply.Success) { await MutationFailed(reply.Error, reply.Code, reply.Status); return; }
+            profiles.RemoveAll(p => p.ProfileId == id); profiles.Add(reply.Value!);
+            profiles = profiles.OrderBy(p => p.ProfileId).ToList();
+            if (ActiveProfile.Selected?.ProfileId == id) ActiveProfile.Clear();
+            ClosePinEditor(); notice = "PIN settings saved. Choose the profile again to continue.";
+        }
+        finally { if (!disposed && version == generation) busy = false; }
+    }
+
     public void Dispose()
     {
         disposed = true; generation++;
+        form = null; ClosePinEditor(); deletePassword = "";
         Session.Changed -= SessionChanged;
         requests.Cancel(); requests.Dispose();
     }

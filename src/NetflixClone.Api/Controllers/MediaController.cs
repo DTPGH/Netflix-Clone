@@ -10,7 +10,8 @@ namespace NetflixClone.Api.Controllers;
 [Route("api/media/{movieId:int:min(1)}")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 [ApiExplorerSettings(IgnoreApi = true)]
-public sealed class MediaController(IGetMoviePlaybackUseCase playback, PrivateDemoMedia media) : ControllerBase
+public sealed class MediaController(IGetMoviePlaybackUseCase playback, PrivateDemoMedia media,
+    NetflixClone.Application.Profiles.IProfileAccessGuard profiles) : ControllerBase
 {
     [HttpGet]
     [HttpHead]
@@ -20,6 +21,11 @@ public sealed class MediaController(IGetMoviePlaybackUseCase playback, PrivateDe
             !int.TryParse(User.FindFirst("profile")?.Value, out var profile) ||
             !int.TryParse(User.FindFirst("movie")?.Value, out var ticketMovie) || movieId != ticketMovie)
             return Unauthorized();
+        // Range requests authenticate with the protected playback ticket, not browser JWT headers.
+        // Recheck current PIN configuration so a ticket issued before PIN changes cannot bypass them.
+        var access = await profiles.CheckAsync(account, profile, User.FindFirst("profile_unlock")?.Value, ct);
+        if (access.IsFailure) return StatusCode(access.Error!.Code == "Profiles.UnlockRequired" ? 403 : 404,
+            new { access.Error.Code, access.Error.Description });
         var result = await playback.ExecuteAsync(new(account, profile, movieId), ct);
         if (result.IsFailure)
             return result.Error!.Type == ErrorType.Forbidden ? StatusCode(403) : NotFound();

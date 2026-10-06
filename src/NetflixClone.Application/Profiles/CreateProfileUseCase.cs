@@ -4,7 +4,7 @@ using NetflixClone.Application.Common.Results;
 using NetflixClone.Domain.Entities;
 namespace NetflixClone.Application.Profiles;
 public sealed class CreateProfileUseCase(IProfileRepository profiles, IProfileCreationScopeFactory scopeFactory,
-    IUnitOfWork unitOfWork, IClock clock) : ICreateProfileUseCase
+    IUnitOfWork unitOfWork, IClock clock, ProfileAccountPasswordVerifier passwords) : ICreateProfileUseCase
 {
     public async Task<Result<CreateProfileResult>> ExecuteAsync(CreateProfileCommand command, CancellationToken cancellationToken = default)
     {
@@ -12,6 +12,8 @@ public sealed class CreateProfileUseCase(IProfileRepository profiles, IProfileCr
         if (name is null) return Result<CreateProfileResult>.Failure(ProfileErrors.InvalidName);
         await using var scope = await scopeFactory.BeginAsync(command.UserAccountId, cancellationToken);
         if (scope is null) return Result<CreateProfileResult>.Failure(ProfileErrors.AccountNotFound);
+        var password = await passwords.VerifyAsync(command.UserAccountId, command.AccountPassword, cancellationToken);
+        if (password.IsFailure) return Result<CreateProfileResult>.Failure(password.Error!);
         if (await profiles.CountActiveByAccountAsync(command.UserAccountId, cancellationToken) >= ProfileRules.MaxActiveProfiles)
             return Result<CreateProfileResult>.Failure(ProfileErrors.LimitReached);
         var now = clock.UtcNow;

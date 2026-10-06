@@ -1,2 +1,2 @@
 namespace NetflixClone.Application.Profiles;
-public sealed record CreateProfileCommand(int UserAccountId, string Name, bool IsKids);
+public sealed record CreateProfileCommand(int UserAccountId, string Name, bool IsKids, string AccountPassword);

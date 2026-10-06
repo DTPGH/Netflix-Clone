@@ -10,6 +10,7 @@ namespace NetflixClone.Api.Controllers;
 [Authorize]
 [Route("api/profiles/{profileId:int:min(1)}/movies")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+[NetflixClone.Api.Security.RequireProfileAccess]
 public sealed class PlaybackController(IGetMoviePlaybackUseCase playback, IPlaybackTicketService tickets, PrivateDemoMedia media) : ControllerBase
 {
     [HttpPost("{movieId:int:min(1)}/playback")]
@@ -23,7 +24,8 @@ public sealed class PlaybackController(IGetMoviePlaybackUseCase playback, IPlayb
         var value = result.Value!;
         if (media.Resolve(value.MediaKey) is null)
             return Conflict(new { Code = "Movies.PlaybackUnavailable", Description = "Video is not available." });
-        var ticket = tickets.Issue(accountId, profileId, movieId, value.MediaKey);
+        var ticket = tickets.Issue(accountId, profileId, movieId, value.MediaKey,
+            Request.Headers[NetflixClone.Api.Security.ProfileAccessFilter.HeaderName].FirstOrDefault());
         var url = $"{Request.PathBase}/api/media/{movieId}?ticket={Uri.EscapeDataString(ticket.Token)}";
         return Ok(new PlaybackResponse(value.MovieId, value.Title, url, value.ContentType, value.IsDemo, ticket.ExpiresAtUtc));
     }

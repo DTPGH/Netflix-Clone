@@ -8,6 +8,7 @@ namespace NetflixClone.Api.Controllers;
 [Authorize]
 [Route("api/profiles/{profileId:int:min(1)}/movies")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+[NetflixClone.Api.Security.RequireProfileAccess]
 public sealed class ProfileMoviesController(IBrowseMoviesUseCase browse, IGetMovieDetailUseCase detail) : ControllerBase
 {
     [HttpGet("{movieId:int:min(1)}")]

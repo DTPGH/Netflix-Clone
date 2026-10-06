@@ -40,6 +40,9 @@ public partial class NetflixCloneDbContext
         modelBuilder.Entity<Rating>().Property(rating => rating.UpdatedAt).IsConcurrencyToken();
         modelBuilder.Entity<Profile>(entity =>
         {
+            entity.Property(profile => profile.PinHash).IsConcurrencyToken();
+            entity.Property(profile => profile.PinFailedAttempts).IsConcurrencyToken();
+            entity.Property(profile => profile.PinLockoutEnd).IsConcurrencyToken();
             entity.Property(profile => profile.IsDeleted).IsConcurrencyToken();
             entity.Property(profile => profile.UpdatedAt).IsConcurrencyToken();
         });

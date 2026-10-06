@@ -127,7 +127,7 @@
         {
             playback = null; pendingUrl = null;
             error = result.Error ?? "Could not prepare protected playback.";
-            subscriptionRequired = result.Status == 403;
+            subscriptionRequired = result.Status == 403 && result.Code != "Profiles.UnlockRequired";
             await Stop();
             return;
         }

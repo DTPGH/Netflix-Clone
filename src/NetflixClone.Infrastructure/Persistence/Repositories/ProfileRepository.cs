@@ -10,7 +10,7 @@ public sealed class ProfileRepository(NetflixCloneDbContext dbContext) : IProfil
         => await dbContext.Profiles.AsNoTracking()
             .Where(p => p.UserAccountId == userAccountId && !p.IsDeleted)
             .OrderBy(p => p.Id)
-            .Select(p => new ProfileSummary(p.Id, p.Name, p.AvatarUrl, p.IsKids, p.MaturityLevel, p.OnboardingCompleted))
+            .Select(p => new ProfileSummary(p.Id, p.Name, p.AvatarUrl, p.IsKids, p.MaturityLevel, p.OnboardingCompleted, p.PinHash != null))
             .ToListAsync(cancellationToken);
 
     public Task<Profile?> GetByIdForAccountAsync(int userAccountId, int profileId, CancellationToken cancellationToken = default)

@@ -7,10 +7,10 @@ namespace NetflixClone.Infrastructure.Security;
 public sealed class PlaybackTicketService(IDataProtectionProvider provider, IClock clock) : IPlaybackTicketService
 {
     private readonly IDataProtector protector = provider.CreateProtector("NetflixClone.PlaybackTicket.v1");
-    public IssuedPlaybackTicket Issue(int accountId, int profileId, int movieId, string mediaKey)
+    public IssuedPlaybackTicket Issue(int accountId, int profileId, int movieId, string mediaKey, string? profileUnlockToken = null)
     {
         var expires = clock.UtcNow.AddMinutes(5);
-        var data = new PlaybackTicket(accountId, profileId, movieId, mediaKey, expires);
+        var data = new PlaybackTicket(accountId, profileId, movieId, mediaKey, expires, profileUnlockToken);
         return new(protector.Protect(JsonSerializer.Serialize(data)), expires);
     }
     public PlaybackTicket? Validate(string token)

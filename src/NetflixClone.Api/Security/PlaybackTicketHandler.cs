@@ -20,6 +20,7 @@ public sealed class PlaybackTicketHandler(IOptionsMonitor<AuthenticationSchemeOp
             new Claim("movie", data.MovieId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             new Claim("media", data.MediaKey)
         }, SchemeName);
+        if (data.ProfileUnlockToken is not null) identity.AddClaim(new Claim("profile_unlock", data.ProfileUnlockToken));
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName)));
     }
 }

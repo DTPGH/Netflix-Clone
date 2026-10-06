@@ -35,6 +35,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 builder.Services.AddDataProtection().SetApplicationName("NetflixClone.Playback");
 builder.Services.AddSingleton<IPlaybackTicketService, PlaybackTicketService>();
+builder.Services.AddSingleton<IProfileUnlockTokenService, ProfileUnlockTokenService>();
 builder.Services.AddSingleton<PrivateDemoMedia>();
 builder.Services.AddSingleton<CatalogImageMedia>();
 builder.Services.AddSingleton<IAdminMediaStorage>(services => new LocalAdminMediaStorage(
@@ -95,7 +96,7 @@ var webOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<str
 builder.Services.AddCors(options => options.AddPolicy("WebClient", policy =>
 {
     if (webOrigins.Length > 0)
-        policy.WithOrigins(webOrigins).WithMethods("GET", "HEAD", "POST", "PUT", "DELETE").WithHeaders("Content-Type", "Authorization", "Range");
+        policy.WithOrigins(webOrigins).WithMethods("GET", "HEAD", "POST", "PUT", "DELETE").WithHeaders("Content-Type", "Authorization", "Range", "X-Profile-Unlock");
 }));
 
 builder.Services.AddScoped<IRegisterAccountUseCase, RegisterAccountUseCase>();
@@ -122,6 +123,9 @@ builder.Services.AddScoped<IListDevicesUseCase, ListDevicesUseCase>();
 builder.Services.AddScoped<IRevokeDeviceUseCase, RevokeDeviceUseCase>();
 builder.Services.AddScoped<IRevokeAllDevicesUseCase, RevokeAllDevicesUseCase>();
 builder.Services.AddScoped<IListProfilesUseCase, ListProfilesUseCase>();
+builder.Services.AddScoped<IProfilePinUseCase, ProfilePinUseCase>();
+builder.Services.AddScoped<IProfileAccessGuard, ProfileAccessGuard>();
+builder.Services.AddScoped<ProfileAccountPasswordVerifier>();
 builder.Services.AddScoped<IListMyListUseCase, ListMyListUseCase>();
 builder.Services.AddScoped<IGetRatingUseCase, GetRatingUseCase>();
 builder.Services.AddScoped<IGetOnboardingUseCase, GetOnboardingUseCase>();

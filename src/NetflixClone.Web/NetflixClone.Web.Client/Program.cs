@@ -8,7 +8,10 @@ var apiBaseUrl = builder.Configuration["Api:BaseUrl"];
 if (!Uri.TryCreate(apiBaseUrl, UriKind.Absolute, out var apiUri) || apiUri.Scheme != "https")
     throw new InvalidOperationException("Configure Api:BaseUrl with the HTTPS API origin.");
 
-builder.Services.AddScoped(_ => new HttpClient { BaseAddress = apiUri, Timeout = TimeSpan.FromSeconds(20) });
+builder.Services.AddScoped<ProfileAccessState>();
+builder.Services.AddScoped(services => new HttpClient(new ProfileAccessHandler(
+    services.GetRequiredService<ProfileAccessState>(), services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>(), apiUri)
+    { InnerHandler = new HttpClientHandler() }) { BaseAddress = apiUri, Timeout = TimeSpan.FromSeconds(20) });
 builder.Services.AddScoped<AuthApiClient>();
 builder.Services.AddScoped<ProfilesApiClient>();
 builder.Services.AddScoped<ActiveProfileState>();

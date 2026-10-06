@@ -8,14 +8,17 @@ public sealed class ActiveProfileState : IDisposable
 {
     private readonly AuthSession session;
     private readonly ProfilesApiClient profiles;
+    private readonly ProfileAccessState access;
     private string? accountId;
     public ProfileReply? Selected { get; private set; }
     public long Version { get; private set; }
     public event Action? Changed;
-    public ActiveProfileState(AuthSession session, ProfilesApiClient profiles)
+    public ActiveProfileState(AuthSession session, ProfilesApiClient profiles, ProfileAccessState access)
     {
         this.session = session; this.profiles = profiles;
+        this.access = access;
         session.Changed += SessionChanged;
+        access.UnlockRequired += Clear;
     }
     public async Task InitializeAsync()
     {
@@ -32,7 +35,7 @@ public sealed class ActiveProfileState : IDisposable
         accountId = current;
         Clear();
     }
-    public async Task<string?> SelectAsync(int profileId)
+    public async Task<string?> SelectAsync(int profileId, string? pin = null)
     {
         await InitializeAsync();
         var version = Version;
@@ -43,11 +46,16 @@ public sealed class ActiveProfileState : IDisposable
         if (!result.Success) return result.Error;
         var selected = result.Value!.Profiles.SingleOrDefault(p => p.ProfileId == profileId);
         if (selected is null) return "This profile is no longer available. Reload the list.";
+        var unlock = await profiles.UnlockAsync(profileId, pin);
+        if (version != Version || !session.IsAuthenticated || session.IsLoggingOut) return "Your session changed. Please try again.";
+        if (!unlock.Success) return unlock.Error;
+        access.Set(profileId, unlock.Value!.UnlockToken, unlock.Value.ExpiresAtUtc);
         Selected = selected; Version++; Changed?.Invoke();
         return null;
     }
     public void Clear()
     {
+        access.Clear();
         Selected = null; Version++; Changed?.Invoke();
     }
     public void Update(ProfileReply profile)
@@ -66,5 +74,5 @@ public sealed class ActiveProfileState : IDisposable
     {
         if (Version == version && Selected?.ProfileId == profileId) Clear();
     }
-    public void Dispose() => session.Changed -= SessionChanged;
+    public void Dispose() { session.Changed -= SessionChanged; access.UnlockRequired -= Clear; access.Clear(); }
 }

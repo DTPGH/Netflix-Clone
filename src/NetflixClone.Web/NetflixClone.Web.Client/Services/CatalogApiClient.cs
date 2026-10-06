@@ -36,14 +36,22 @@ public sealed class CatalogApiClient(HttpClient http, AuthSession session)
             if (!response.IsSuccessStatusCode)
             {
                 var status = (int)response.StatusCode;
-                return new(default, status switch {
+                string? code = null;
+                try
+                {
+                    using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+                    if (json.RootElement.TryGetProperty("code", out var errorCode) && errorCode.ValueKind == JsonValueKind.String)
+                        code = errorCode.GetString();
+                }
+                catch (JsonException) { }
+                return new(default, code == "Profiles.UnlockRequired" ? "Please unlock this profile again." : status switch {
                     401 => "Please sign in to watch this demo.",
                     403 => "An active subscription is required to play this video. Check your subscription and try again.",
                     404 => "This movie is unavailable for this profile.",
                     409 => "No playable demo video is available for this movie.",
                     400 => "Check your search and filter values.",
                     _ => "The movie service is unavailable. Please try again."
-                }, status);
+                }, status, code);
             }
             var value = await response.Content.ReadFromJsonAsync<T>(cancellationToken: ct);
             return value is null ? new(default, "The service returned an empty response.", 0) : new(value, null, (int)response.StatusCode);

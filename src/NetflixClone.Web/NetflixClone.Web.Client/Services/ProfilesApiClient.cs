@@ -12,8 +12,14 @@ public sealed class ProfilesApiClient(HttpClient http, AuthSession session)
         => session.SendAuthenticatedAsync(token => SendAsync<ProfileReply>(HttpMethod.Post, "", token, payload, ct));
     public Task<ApiResult<ProfileReply>> UpdateAsync(int id, ProfilePayload payload, CancellationToken ct = default)
         => session.SendAuthenticatedAsync(token => SendAsync<ProfileReply>(HttpMethod.Put, "/" + id, token, payload, ct));
-    public Task<ApiResult<object>> DeleteAsync(int id, CancellationToken ct = default)
-        => session.SendAuthenticatedAsync(token => SendAsync<object>(HttpMethod.Delete, "/" + id, token, null, ct));
+    public Task<ApiResult<object>> DeleteAsync(int id, string accountPassword, CancellationToken ct = default)
+        => session.SendAuthenticatedAsync(token => SendAsync<object>(HttpMethod.Delete, "/" + id, token, new ProfilePasswordPayload(accountPassword), ct));
+    public Task<ApiResult<ProfileReply>> SetPinAsync(int id, string accountPassword, string pin, CancellationToken ct = default)
+        => session.SendAuthenticatedAsync(token => SendAsync<ProfileReply>(HttpMethod.Put, $"/{id}/pin", token, new ProfilePinPayload(accountPassword, pin), ct));
+    public Task<ApiResult<ProfileReply>> RemovePinAsync(int id, string accountPassword, CancellationToken ct = default)
+        => session.SendAuthenticatedAsync(token => SendAsync<ProfileReply>(HttpMethod.Delete, $"/{id}/pin", token, new ProfilePasswordPayload(accountPassword), ct));
+    public Task<ApiResult<ProfileUnlockReply>> UnlockAsync(int id, string? pin, CancellationToken ct = default)
+        => session.SendAuthenticatedAsync(token => SendAsync<ProfileUnlockReply>(HttpMethod.Post, $"/{id}/unlock", token, new ProfileUnlockPayload(pin), ct));
 
     private async Task<ApiResult<T>> SendAsync<T>(HttpMethod method, string path, string token, object? body, CancellationToken ct)
     {
@@ -35,6 +41,11 @@ public sealed class ProfilesApiClient(HttpClient http, AuthSession session)
                 catch (JsonException) { }
                 var message = code switch
                 {
+                    "Profiles.InvalidPin" => "Enter exactly four digits (0–9).",
+                    "Profiles.WrongPin" => "Incorrect PIN. Please try again.",
+                    "Profiles.PinTemporarilyLocked" => "Too many incorrect PIN attempts. Wait five minutes, or use your account password in Manage profiles to reset the PIN.",
+                    "Profiles.UnlockRequired" => "Please unlock this profile again.",
+                    "Profiles.WrongAccountPassword" => "The account password is incorrect.",
                     "Profiles.InvalidName" => "Enter a name between 1 and 100 characters.",
                     "Profiles.LimitReached" => "You already have 5 profiles. Delete one before adding another.",
                     "Profiles.ConcurrentChange" => "This profile changed elsewhere. Reload the list and review the latest details before saving again.",

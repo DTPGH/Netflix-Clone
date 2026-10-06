@@ -1,2 +1,2 @@
 namespace NetflixClone.Application.Profiles;
-public sealed record DeleteProfileCommand(int UserAccountId, int ProfileId);
+public sealed record DeleteProfileCommand(int UserAccountId, int ProfileId, string AccountPassword);

@@ -7,6 +7,7 @@ namespace NetflixClone.Api.Controllers;
 [ApiController, Authorize]
 [Route("api/profiles/{profileId:int:min(1)}/movies/{movieId:int:min(1)}/viewing-sessions")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+[NetflixClone.Api.Security.RequireProfileAccess]
 public sealed class ViewingSessionsController(IViewingSessionUseCase useCase) : ControllerBase
 {
     [HttpPost]
