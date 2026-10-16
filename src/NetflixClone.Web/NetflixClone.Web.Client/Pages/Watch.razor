@@ -23,7 +23,7 @@
     else if (playback is not null)
     {
         <h1 class="h2">@playback.Title</h1>
-        <p class="text-muted">Demo video · Blender sample footage, not the selected movie.</p>
+        <p class="text-muted">Demo video · Blender sample footage, not the selected movie. Pausing holds your playback slot for up to two minutes.</p>
         @if (viewingError is not null) { <p class="small text-warning" role="status">@viewingError</p> }
         @if (progressError is not null)
         {
@@ -44,6 +44,9 @@
     private string? error, pendingUrl;
     private bool busy, renewing, disposed, subscriptionRequired;
     private long version;
+    private Guid clientSessionId = Guid.NewGuid();
+    private (int ProfileId, int MovieId)? reservationContext;
+    private bool needsNewReservation, pendingPlay;
     private long progressProfileVersion;
     private int progressProfileId, progressMovieId, resumeSeconds;
     private DateTime? progressStamp;
@@ -92,6 +95,7 @@
     }
     private async Task Load()
     {
+        var hadReservation = playback is not null;
         // Close the previous session before invalidating callbacks for a reload/new movie.
         await Stop();
         var request = ++version;
@@ -105,6 +109,9 @@
         progressProfileVersion = Active.Version;
         progressProfileId = Active.Selected.ProfileId;
         progressMovieId = MovieId;
+        if (hadReservation || needsNewReservation || reservationContext != (progressProfileId, MovieId))
+            clientSessionId = Guid.NewGuid();
+        reservationContext = (progressProfileId, MovieId); needsNewReservation = false;
         var saved = await History.GetAsync(progressProfileId, progressMovieId, lifetime.Token);
         if (disposed || request != version || progressProfileVersion != Active.Version) return;
         if (saved.Success)
@@ -114,20 +121,30 @@
             resumeSeconds = saved.Value.IsCompleted ? 0 : saved.Value.PositionSeconds;
         }
         else progressError = saved.Error; // Never overwrite unknown progress after a failed GET.
-        await Issue(request, Active.Version, Active.Selected.ProfileId);
+        await Issue(request, Active.Version, Active.Selected.ProfileId, replaceExpired: true);
     }
-    private async Task Issue(long request, long profileVersion, int profileId)
+    private async Task Issue(long request, long profileVersion, int profileId, bool replaceExpired = false)
     {
-        var result = await Api.PlaybackAsync(profileId, MovieId, lifetime.Token);
+        var result = await Api.PlaybackAsync(profileId, MovieId, clientSessionId, lifetime.Token);
         if (disposed || request != version || profileVersion != Active.Version) return;
+        // Only an explicit page load/retry can replace a key whose earlier commit response was lost.
+        // A background ticket renewal must never acquire another slot for a paused/expired stream.
+        if (replaceExpired && result.Code == "Playback.SessionExpired")
+        {
+            clientSessionId = Guid.NewGuid();
+            result = await Api.PlaybackAsync(profileId, MovieId, clientSessionId, lifetime.Token);
+            if (disposed || request != version || profileVersion != Active.Version) return;
+        }
         busy = renewing = false;
         if (!result.Success || result.Value is not { } value || value.MovieId != MovieId ||
-            !value.IsDemo || value.ContentType != "video/mp4" ||
+            !value.IsDemo || value.ContentType != "video/mp4" || value.ViewingSession is not { SessionId: > 0, IsEnded: false } ||
+            value.ViewingSession.LeaseExpiresAtUtc <= DateTime.UtcNow ||
             value.ExpiresAtUtc <= DateTime.UtcNow || Api.PlaybackUrl(value.VideoUrl, MovieId) is not { } url)
         {
             playback = null; pendingUrl = null;
             error = result.Error ?? "Could not prepare protected playback.";
             subscriptionRequired = result.Status == 403 && result.Code != "Profiles.UnlockRequired";
+            needsNewReservation |= result.Code == "Playback.SessionExpired";
             await Stop();
             return;
         }
@@ -143,7 +160,8 @@
             module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/demo-player.js");
             if (disposed || request != version) return;
             self ??= DotNetObjectReference.Create(this);
-            await module.InvokeVoidAsync("setSource", player, url, expires, self, request, playerId, resumeSeconds);
+            var autoPlay = pendingPlay; pendingPlay = false;
+            await module.InvokeVoidAsync("setSource", player, url, expires, self, request, playerId, resumeSeconds, playback.ViewingSession, autoPlay);
         }
         catch (JSException)
         {
@@ -177,27 +195,33 @@
         finally { progressGate.Release(); }
     }
     [JSInvokable]
-    public async Task<ViewingSessionReply?> StartViewingSession(long expectedVersion, string clientId)
-    {
-        if (!CanRecordViewing(expectedVersion) || !Guid.TryParse(clientId, out var key)) return null;
-        var reply = await Viewing.StartAsync(progressProfileId, progressMovieId, key, lifetime.Token);
-        if (!CanRecordViewing(expectedVersion)) return null;
-        viewingError = reply is null ? "Viewing activity could not be saved. Playback will continue; recording will retry." : null;
-        StateHasChanged();
-        return reply;
-    }
-    [JSInvokable]
     public async Task<ViewingSessionReply?> SaveViewingCheckpoint(long expectedVersion, int sessionId, long sequence, long milliseconds, string? endReason)
     {
         if (!CanRecordViewing(expectedVersion)) return null;
         var reply = await Viewing.CheckpointAsync(progressProfileId, progressMovieId, sessionId, sequence, milliseconds, endReason, lifetime.Token);
         if (!CanRecordViewing(expectedVersion)) return null;
-        viewingError = reply is null ? "Viewing activity could not be saved. Recording will retry." : null;
+        viewingError = reply is null ? "Playback activity could not be confirmed. Retrying; playback will stop if the slot cannot be renewed within two minutes." : null;
         StateHasChanged();
         return reply;
     }
     private bool CanRecordViewing(long expectedVersion) => !disposed && expectedVersion == version &&
         progressProfileVersion == Active.Version && Session.IsAuthenticated && Active.Selected?.ProfileId == progressProfileId;
+    [JSInvokable]
+    public async Task PlaybackLeaseExpired(long expectedVersion)
+    {
+        if (disposed || expectedVersion != version) return;
+        needsNewReservation = true; playback = null; pendingUrl = null; busy = renewing = false;
+        error = "Your playback slot expired. Try again to request a slot and continue watching.";
+        await Stop(); StateHasChanged();
+    }
+    [JSInvokable]
+    public async Task RestartPlayback(long expectedVersion)
+    {
+        if (disposed || renewing || expectedVersion != version || Active.Selected is not { } profile) return;
+        renewing = true; clientSessionId = Guid.NewGuid(); pendingPlay = true;
+        await Issue(version, Active.Version, profile.ProfileId);
+        if (!disposed) StateHasChanged();
+    }
     [JSInvokable]
     public async Task RenewPlayback(long expectedVersion)
     {
@@ -211,9 +235,13 @@
     public async Task PlaybackFailed(long expectedVersion)
     {
         if (disposed || expectedVersion != version) return;
+        // Send the final close while callbacks still belong to the current reservation.
+        await Stop();
+        if (disposed || expectedVersion != version) return;
         version++; error = "The video could not be played. Check your connection and try again.";
+        needsNewReservation = true;
         playback = null; pendingUrl = null; renewing = busy = false;
-        await Stop(); StateHasChanged();
+        StateHasChanged();
     }
     public async ValueTask DisposeAsync()
     {

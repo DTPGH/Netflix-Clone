@@ -5,10 +5,11 @@ export async function stop(video, id, preserveProgress = false) {
     const state = states.get(id);
     video = state?.video ?? video;
     if (!video) return;
+    let closing = Promise.resolve();
     if (state) {
         clearTimeout(state.timer);
         if (preserveProgress) state.viewing.detach();
-        else await state.viewing.close();
+        else closing = state.viewing.close();
         video.removeEventListener("error", state.error);
         video.removeEventListener("loadedmetadata", state.metadata);
         video.removeEventListener("playing", state.playing);
@@ -22,19 +23,25 @@ export async function stop(video, id, preserveProgress = false) {
     video.pause();
     video.removeAttribute("src");
     video.load();
+    await closing;
 }
-export async function setSource(video, url, expiresAt, owner, version, id, resumeSeconds = 0) {
+export async function setSource(video, url, expiresAt, owner, version, id, resumeSeconds = 0, reservation, forcePlay = false) {
+    if (!reservation || !Number.isInteger(reservation.sessionId) || reservation.sessionId < 1 || reservation.isEnded ||
+        !(Date.parse(reservation.leaseExpiresAtUtc) > Date.now()))
+        throw new Error("A live playback reservation is required.");
     const old = states.get(id);
     const wasEnded = old && video.ended;
     const position = wasEnded ? 0 : old && Number.isFinite(video.currentTime) ? video.currentTime : resumeSeconds;
-    const resume = old && !video.paused && !video.ended;
+    const resume = forcePlay || (old && !video.paused && !video.ended);
     await stop(video, id, true);
     const expires = Date.parse(expiresAt);
     const progress = old?.progress ?? { played: false, cancelled: false, pending: null, flight: null, last: Date.now() };
     // Renewing an ended source must not turn a passive pause/flush into a replay checkpoint.
     if (wasEnded) progress.played = false;
     const state = { video, progress, ready: false, renewing: false, timer: null, metadata: null, error: null, visible: null };
-    state.viewing = old?.viewing ?? createViewingTracker(video, owner, version);
+    if (old && old.viewing.sessionId !== reservation?.sessionId) await old.viewing.close();
+    state.viewing = old?.viewing.sessionId === reservation?.sessionId ? old.viewing : createViewingTracker(video, owner, version, reservation);
+    state.viewing.updateReservation(reservation);
     if (old) state.viewing.attach();
     state.report = () => {
         if (!state.ready || !progress.played || progress.cancelled || !Number.isFinite(video.duration) ||
@@ -97,5 +104,9 @@ export async function flush(id) {
 }
 export async function closeViewing(id) {
     const state = states.get(id);
-    if (state) await state.viewing.close();
+    if (state) {
+        const closing = state.viewing.close();
+        state.video.pause();
+        await closing;
+    }
 }

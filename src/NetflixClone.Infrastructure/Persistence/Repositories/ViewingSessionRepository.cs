@@ -5,6 +5,13 @@ using NetflixClone.Domain.Entities;
 namespace NetflixClone.Infrastructure.Persistence.Repositories;
 public sealed class ViewingSessionRepository(NetflixCloneDbContext db) : IViewingSessionRepository
 {
+    private IQueryable<ViewingSession> Active(int accountId, DateTime cutoffUtc) => db.ViewingSessions.AsNoTracking().Where(s =>
+        s.Profile.UserAccountId == accountId && !s.Profile.IsDeleted && s.Device.UserAccountId == accountId &&
+        s.Device.RevokedAt == null && s.EndedAt == null && EF.Property<DateTime>(s, "LastCheckpointAtUtc") > cutoffUtc);
+    public Task<int> CountActiveByAccountAsync(int accountId, DateTime cutoffUtc, CancellationToken ct)
+        => Active(accountId, cutoffUtc).CountAsync(ct);
+    public Task<bool> IsActiveForPlaybackAsync(int accountId, int profileId, int movieId, int sessionId, DateTime cutoffUtc, CancellationToken ct)
+        => Active(accountId, cutoffUtc).AnyAsync(s => s.Id == sessionId && s.ProfileId == profileId && s.MovieId == movieId, ct);
     private IQueryable<ViewingSession> Owned(int accountId, int profileId, int movieId, int deviceId) => db.ViewingSessions.Where(s =>
         s.ProfileId == profileId && s.MovieId == movieId && s.DeviceId == deviceId && s.Profile.UserAccountId == accountId && s.Device.UserAccountId == accountId);
     private ViewingSessionState Read(ViewingSession row)

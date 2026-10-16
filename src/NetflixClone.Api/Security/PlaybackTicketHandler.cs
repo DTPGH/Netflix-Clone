@@ -18,6 +18,7 @@ public sealed class PlaybackTicketHandler(IOptionsMonitor<AuthenticationSchemeOp
             new Claim("sub", data.UserAccountId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             new Claim("profile", data.ProfileId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             new Claim("movie", data.MovieId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new Claim("viewing_session", data.SessionId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             new Claim("media", data.MediaKey)
         }, SchemeName);
         if (data.ProfileUnlockToken is not null) identity.AddClaim(new Claim("profile_unlock", data.ProfileUnlockToken));

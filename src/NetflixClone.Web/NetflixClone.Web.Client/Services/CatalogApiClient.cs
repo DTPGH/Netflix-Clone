@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using NetflixClone.Web.Client.Models;
 namespace NetflixClone.Web.Client.Services;
-public sealed class CatalogApiClient(HttpClient http, AuthSession session)
+public sealed class CatalogApiClient(HttpClient http, AuthSession session, ICredentialStore credentials)
 {
     public Task<ApiResult<MoviesReply>> BrowseProfileAsync(int profileId, int page, string search, int? genre, string sort, CancellationToken ct)
         => session.SendAuthenticatedAsync(token => SendAsync<MoviesReply>(HttpMethod.Get,
@@ -16,8 +16,13 @@ public sealed class CatalogApiClient(HttpClient http, AuthSession session)
         => SendAsync<GenresReply>(HttpMethod.Get, "api/genres", null, ct);
     public Task<ApiResult<MovieReply>> DetailAsync(int profileId, int id, CancellationToken ct)
         => session.SendAuthenticatedAsync(token => SendAsync<MovieReply>(HttpMethod.Get, $"api/profiles/{profileId}/movies/{id}", token, ct), retryUnauthorized: true);
-    public Task<ApiResult<PlaybackReply>> PlaybackAsync(int profileId, int id, CancellationToken ct)
-        => session.SendAuthenticatedAsync(token => SendAsync<PlaybackReply>(HttpMethod.Post, $"api/profiles/{profileId}/movies/{id}/playback", token, ct));
+    public async Task<ApiResult<PlaybackReply>> PlaybackAsync(int profileId, int id, Guid clientSessionId, CancellationToken ct)
+    {
+        var deviceIdentifier = await credentials.GetDeviceAsync();
+        if (deviceIdentifier is null) return new(default, "Your device session is unavailable. Sign in again.", 0);
+        return await session.SendAuthenticatedAsync(token => SendAsync<PlaybackReply>(HttpMethod.Post,
+            $"api/profiles/{profileId}/movies/{id}/playback", token, ct, new { deviceIdentifier, clientSessionId }), retryUnauthorized: true);
+    }
     public string? PlaybackUrl(string value, int movieId)
     {
         if (http.BaseAddress is null || !Uri.TryCreate(http.BaseAddress, value, out var uri) ||
@@ -26,11 +31,12 @@ public sealed class CatalogApiClient(HttpClient http, AuthSession session)
             uri.Fragment.Length != 0) return null;
         return uri.AbsoluteUri;
     }
-    private async Task<ApiResult<T>> SendAsync<T>(HttpMethod method, string path, string? token, CancellationToken ct)
+    private async Task<ApiResult<T>> SendAsync<T>(HttpMethod method, string path, string? token, CancellationToken ct, object? body = null)
     {
         try
         {
             using var request = new HttpRequestMessage(method, path);
+            if (body is not null) request.Content = JsonContent.Create(body);
             if (token is not null) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             using var response = await http.SendAsync(request, ct);
             if (!response.IsSuccessStatusCode)
@@ -44,14 +50,20 @@ public sealed class CatalogApiClient(HttpClient http, AuthSession session)
                         code = errorCode.GetString();
                 }
                 catch (JsonException) { }
-                return new(default, code == "Profiles.UnlockRequired" ? "Please unlock this profile again." : status switch {
+                return new(default, code switch {
+                    "Profiles.UnlockRequired" => "Please unlock this profile again.",
+                    "Playback.ConcurrentStreamLimitReached" => "Your plan's simultaneous playback limit has been reached. Stop playback on another device or tab, then try again. A disconnected stream may take up to two minutes to release its slot.",
+                    "Playback.SessionExpired" => "This playback slot has expired. Try again to request a new slot.",
+                    "ViewingSessions.ConcurrentChange" => "Playback state changed. Please try again.",
+                    "ViewingSessions.NotFound" => "This device session is no longer available. Sign in again to start playback.",
+                    _ => status switch {
                     401 => "Please sign in to watch this demo.",
                     403 => "An active subscription is required to play this video. Check your subscription and try again.",
                     404 => "This movie is unavailable for this profile.",
                     409 => "No playable demo video is available for this movie.",
                     400 => "Check your search and filter values.",
                     _ => "The movie service is unavailable. Please try again."
-                }, status, code);
+                } }, status, code);
             }
             var value = await response.Content.ReadFromJsonAsync<T>(cancellationToken: ct);
             return value is null ? new(default, "The service returned an empty response.", 0) : new(value, null, (int)response.StatusCode);
