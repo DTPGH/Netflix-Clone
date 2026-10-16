@@ -3,17 +3,10 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using NetflixClone.Web.Client.Models;
 namespace NetflixClone.Web.Client.Services;
-public sealed record ViewingSessionReply(int SessionId, int WatchedSeconds, bool IsQualifiedView, bool IsEnded, long Sequence);
+public sealed record ViewingSessionReply(int SessionId, int WatchedSeconds, bool IsQualifiedView, bool IsEnded, long Sequence,
+    DateTime LeaseExpiresAtUtc, long WatchedMilliseconds);
 public sealed class ViewingSessionsApiClient(HttpClient http, AuthSession auth, ICredentialStore store)
 {
-    public async Task<ViewingSessionReply?> StartAsync(int profileId, int movieId, Guid clientId, CancellationToken ct)
-    {
-        var identifier = await store.GetDeviceAsync();
-        if (identifier is null) return null;
-        var result = await auth.SendAuthenticatedAsync(token => Send(HttpMethod.Post,
-            $"api/profiles/{profileId}/movies/{movieId}/viewing-sessions", new { deviceIdentifier = identifier, clientSessionId = clientId }, token, ct), retryUnauthorized: true);
-        return result.Success ? result.Value : null;
-    }
     public async Task<ViewingSessionReply?> CheckpointAsync(int profileId, int movieId, int id, long sequence, long watchedMilliseconds, string? endReason, CancellationToken ct)
     {
         var identifier = await store.GetDeviceAsync();

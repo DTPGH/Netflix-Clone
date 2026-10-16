@@ -9,18 +9,25 @@ namespace NetflixClone.Application.Viewing;
 
 public interface IViewingSessionUseCase
 {
+    Task<bool> IsActiveForPlaybackAsync(int accountId, int profileId, int movieId, int sessionId, CancellationToken ct);
     Task<Result<ViewingSessionReply>> StartAsync(int accountId, int profileId, int movieId, string? deviceIdentifier, Guid clientSessionId, CancellationToken ct);
     Task<Result<ViewingSessionReply>> CheckpointAsync(int accountId, int profileId, int movieId, string? deviceIdentifier, int sessionId, ViewingCheckpoint checkpoint, CancellationToken ct);
 }
 public sealed class ViewingSessionUseCase(IGetMoviePlaybackUseCase playback, IDeviceIdentifierService identifiers,
-    IViewingSessionScopeFactory scopes, IViewingSessionRepository sessions, IUnitOfWork unitOfWork, IClock clock) : IViewingSessionUseCase
+    IViewingSessionScopeFactory scopes, IViewingSessionRepository sessions, IUnitOfWork unitOfWork, IClock clock,
+    ISubscriptionRepository subscriptions) : IViewingSessionUseCase
 {
     public static readonly TimeSpan Timeout = TimeSpan.FromMinutes(2);
+    public static readonly Error StreamLimitReached = new("Playback.ConcurrentStreamLimitReached", "Your plan's simultaneous playback limit has been reached. Stop another stream or try again shortly.", ErrorType.Conflict);
+    public static readonly Error SessionExpired = new("Playback.SessionExpired", "The playback slot expired. Request a new playback session.", ErrorType.Conflict);
     private static readonly Error Invalid = new("ViewingSessions.Invalid", "Invalid viewing checkpoint.", ErrorType.Validation);
     private static readonly Error Missing = new("ViewingSessions.NotFound", "Viewing session or device is unavailable.", ErrorType.NotFound);
     private static readonly Error Conflict = new("ViewingSessions.ConcurrentChange", "Viewing session changed. Retry the same checkpoint.", ErrorType.Conflict);
     private static ViewingSessionReply Map(ViewingSessionState state) => new(state.Session.Id, state.Session.WatchedSeconds,
-        state.Session.IsQualifiedView, state.Session.EndedAt is not null, state.Sequence);
+        state.Session.IsQualifiedView, state.Session.EndedAt is not null, state.Sequence,
+        DateTime.SpecifyKind(state.LastCheckpointAtUtc.Add(Timeout), DateTimeKind.Utc), state.WatchedMilliseconds);
+    public Task<bool> IsActiveForPlaybackAsync(int accountId, int profileId, int movieId, int sessionId, CancellationToken ct)
+        => sessionId > 0 ? sessions.IsActiveForPlaybackAsync(accountId, profileId, movieId, sessionId, clock.UtcNow - Timeout, ct) : Task.FromResult(false);
     private async Task ExpireAsync(int deviceId, DateTime now, CancellationToken ct)
     {
         foreach (var state in await sessions.GetStaleAsync(deviceId, now - Timeout, ct))
@@ -45,6 +52,16 @@ public sealed class ViewingSessionUseCase(IGetMoviePlaybackUseCase playback, IDe
             return Result<ViewingSessionReply>.Failure(Invalid);
         if (state is null)
         {
+            // The scope holds the account UPDLOCK through count + insert + commit.
+            // Read the current Plan; selling status does not cancel an already purchased subscription.
+            var effective = (await subscriptions.GetActiveRowsAsync(accountId, ct))
+                .Where(s => s.StartDate <= now && s.EndDate > now).ToArray();
+            if (effective.Length == 0)
+                return Result<ViewingSessionReply>.Failure(new("Movies.SubscriptionRequired", "An active subscription is required to play this video.", ErrorType.Forbidden));
+            if (effective.Length != 1 || effective[0].Plan.MaxConcurrentStreams < 1)
+                return Result<ViewingSessionReply>.Failure(new("Playback.InvalidEntitlement", "The playback entitlement is unavailable.", ErrorType.Failure));
+            if (await sessions.CountActiveByAccountAsync(accountId, now - Timeout, ct) >= effective[0].Plan.MaxConcurrentStreams)
+                return Result<ViewingSessionReply>.Failure(StreamLimitReached);
             state = new() { Session = new ViewingSession { ProfileId = profileId, MovieId = movieId,
                 DeviceId = scope.DeviceId, StartedAt = now }, ClientSessionId = clientSessionId, LastCheckpointAtUtc = now };
             sessions.Add(state);
@@ -82,7 +99,8 @@ public sealed class ViewingSessionUseCase(IGetMoviePlaybackUseCase playback, IDe
                 return Result<ViewingSessionReply>.Failure(Invalid);
             state.WatchedMilliseconds = checkpoint.WatchedMilliseconds;
             state.Sequence = checkpoint.Sequence;
-            state.LastCheckpointAtUtc = now;
+            // A new sequence with no viewing progress must not keep a paused slot alive.
+            if (delta > 0) state.LastCheckpointAtUtc = now;
             state.Session.WatchedSeconds = (int)(state.WatchedMilliseconds / 1000);
             state.Session.IsQualifiedView |= state.Session.WatchedSeconds >= 120;
             if (checkpoint.EndReason is not null) { state.Session.EndedAt = now; state.Session.EndReason = checkpoint.EndReason; }

@@ -11,7 +11,8 @@ namespace NetflixClone.Api.Controllers;
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 [ApiExplorerSettings(IgnoreApi = true)]
 public sealed class MediaController(IGetMoviePlaybackUseCase playback, PrivateDemoMedia media,
-    NetflixClone.Application.Profiles.IProfileAccessGuard profiles) : ControllerBase
+    NetflixClone.Application.Profiles.IProfileAccessGuard profiles,
+    NetflixClone.Application.Viewing.IViewingSessionUseCase sessions) : ControllerBase
 {
     [HttpGet]
     [HttpHead]
@@ -19,8 +20,12 @@ public sealed class MediaController(IGetMoviePlaybackUseCase playback, PrivateDe
     {
         if (!int.TryParse(User.FindFirst("sub")?.Value, out var account) ||
             !int.TryParse(User.FindFirst("profile")?.Value, out var profile) ||
-            !int.TryParse(User.FindFirst("movie")?.Value, out var ticketMovie) || movieId != ticketMovie)
+            !int.TryParse(User.FindFirst("movie")?.Value, out var ticketMovie) || movieId != ticketMovie ||
+            !int.TryParse(User.FindFirst("viewing_session")?.Value, out var sessionId))
             return Unauthorized();
+        if (!await sessions.IsActiveForPlaybackAsync(account, profile, movieId, sessionId, ct))
+            return Conflict(new { NetflixClone.Application.Viewing.ViewingSessionUseCase.SessionExpired.Code,
+                NetflixClone.Application.Viewing.ViewingSessionUseCase.SessionExpired.Description });
         // Range requests authenticate with the protected playback ticket, not browser JWT headers.
         // Recheck current PIN configuration so a ticket issued before PIN changes cannot bypass them.
         var access = await profiles.CheckAsync(account, profile, User.FindFirst("profile_unlock")?.Value, ct);

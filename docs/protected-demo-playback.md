@@ -1,5 +1,10 @@
 # Profile detail and protected demo playback
 
+Current playback additionally reserves a concurrent-stream slot before issuing
+a session-bound v2 ticket. POST playback requires deviceIdentifier/clientSessionId;
+media checks the live lease. See concurrent-streams.md for current contracts and
+pause/expiry behavior; descriptions below explain the original media boundary.
+
 ## Runtime flow
 
 Movie Detail now requires login and a selected profile. The client sends GET

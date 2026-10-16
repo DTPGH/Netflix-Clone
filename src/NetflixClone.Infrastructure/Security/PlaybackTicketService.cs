@@ -6,11 +6,12 @@ using NetflixClone.Application.Common.Abstractions.Time;
 namespace NetflixClone.Infrastructure.Security;
 public sealed class PlaybackTicketService(IDataProtectionProvider provider, IClock clock) : IPlaybackTicketService
 {
-    private readonly IDataProtector protector = provider.CreateProtector("NetflixClone.PlaybackTicket.v1");
-    public IssuedPlaybackTicket Issue(int accountId, int profileId, int movieId, string mediaKey, string? profileUnlockToken = null)
+    private readonly IDataProtector protector = provider.CreateProtector("NetflixClone.PlaybackTicket.v2");
+    public IssuedPlaybackTicket Issue(int accountId, int profileId, int movieId, string mediaKey, int sessionId, string? profileUnlockToken = null)
     {
+        if (sessionId <= 0) throw new ArgumentOutOfRangeException(nameof(sessionId));
         var expires = clock.UtcNow.AddMinutes(5);
-        var data = new PlaybackTicket(accountId, profileId, movieId, mediaKey, expires, profileUnlockToken);
+        var data = new PlaybackTicket(accountId, profileId, movieId, mediaKey, expires, sessionId, profileUnlockToken);
         return new(protector.Protect(JsonSerializer.Serialize(data)), expires);
     }
     public PlaybackTicket? Validate(string token)
@@ -19,7 +20,7 @@ public sealed class PlaybackTicketService(IDataProtectionProvider provider, IClo
         try
         {
             var data = JsonSerializer.Deserialize<PlaybackTicket>(protector.Unprotect(token));
-            return data is { UserAccountId: > 0, ProfileId: > 0, MovieId: > 0 } &&
+            return data is { UserAccountId: > 0, ProfileId: > 0, MovieId: > 0, SessionId: > 0 } &&
                 data.ExpiresAtUtc > clock.UtcNow && data.ExpiresAtUtc <= clock.UtcNow.AddMinutes(5) &&
                 !string.IsNullOrEmpty(data.MediaKey) ? data : null;
         }

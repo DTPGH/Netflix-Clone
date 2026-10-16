@@ -2,6 +2,8 @@ using NetflixClone.Application.Viewing;
 namespace NetflixClone.Application.Common.Abstractions.Persistence;
 public interface IViewingSessionRepository
 {
+    Task<int> CountActiveByAccountAsync(int accountId, DateTime cutoffUtc, CancellationToken ct);
+    Task<bool> IsActiveForPlaybackAsync(int accountId, int profileId, int movieId, int sessionId, DateTime cutoffUtc, CancellationToken ct);
     Task<ViewingSessionState?> GetAsync(int accountId, int profileId, int movieId, int deviceId, Guid clientSessionId, CancellationToken ct);
     Task<ViewingSessionState?> GetAsync(int accountId, int profileId, int movieId, int deviceId, int sessionId, CancellationToken ct);
     Task<IReadOnlyList<ViewingSessionState>> GetStaleAsync(int deviceId, DateTime cutoffUtc, CancellationToken ct);
